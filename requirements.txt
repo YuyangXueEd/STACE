@@ -8,8 +8,9 @@ torch
 torchvision
 torchaudio
 
-# Agent Framework (will be installed in dev mode in Story 1.2)
-# camel-ai will be installed via: pip install -e external/camel
+# Agent Framework (installed in dev/editable mode)
+# CAMEL-AI cloned from https://github.com/camel-ai/camel.git to external/camel/
+-e external/camel
 
 # LLM/VLM API Client
 openai  # For OpenRouter API compatibility
@@ -32,6 +33,7 @@ requests
 # Utilities
 pathlib
 python-dateutil
+pythonjsonlogger
 
 # Development Tools
 pytest
