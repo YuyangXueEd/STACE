@@ -1,0 +1,56 @@
+# CAUST Project Dependencies
+# All versions pinned for reproducibility (NFR11)
+
+# Core Python version requirement: 3.11.5+
+
+# Deep Learning Framework
+torch
+torchvision
+torchaudio
+
+# Agent Framework (will be installed in dev mode in Story 1.2)
+# camel-ai will be installed via: pip install -e external/camel
+
+# LLM/VLM API Client
+openai  # For OpenRouter API compatibility
+
+# RAG Dependencies
+sentence-transformers
+
+# Data Validation
+pydantic
+pydantic-settings
+
+# Configuration Management
+PyYAML
+python-dotenv
+
+# HTTP Clients
+httpx
+requests
+
+# Utilities
+pathlib
+python-dateutil
+
+# Development Tools
+pytest
+pytest-mock
+pytest-asyncio
+pytest-cov
+
+# Code Quality
+black
+ruff
+mypy
+
+# Type Stubs
+types-PyYAML
+types-requests
+
+# Testing Containers
+testcontainers
+
+# Logging
+python-json-logger
+
