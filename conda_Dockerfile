@@ -1,0 +1,60 @@
+FROM nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04
+LABEL maintainer="Yuyang Xue"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 1. Install all system dependencies in a single layer
+RUN apt-get -y update \
+    && apt-get install -y software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get install -y curl
+
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x -o nodesource_setup.sh
+RUN bash nodesource_setup.sh
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends bash \
+    build-essential git git-lfs ca-certificates libsndfile1-dev libgl1 screen \
+    python3.12 python3.12-dev nvtop python3-pip python3.12-venv nodejs cmake nano && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# 2. Set up user and group first
+ARG USER_ID=25876
+ARG GROUP_ID=4451
+RUN groupadd -g ${GROUP_ID} usergroup && \
+    useradd -m -u ${USER_ID} -g usergroup yyx
+RUN chown -R yyx:usergroup /home/yyx 
+USER yyx
+
+# Set environment variables
+ENV TORCH_HOME=/home/yyx/.torch
+ENV HF_HOME=/home/yyx/Huggingface
+ENV HF_DATASETS_CACHE=/home/yyx/Huggingface
+ENV HF_HUB_ENABLE_HF_TRANSFER=1
+ENV DNNLIB_CACHE_DIR=/home/yyx/.cache/dnnlib
+ENV TORCH_EXTENSIONS_DIR=/home/yyx/.torch/torch_extensions
+ENV TORCH_CUDA_ARCH_LIST="9.0+PTX"
+ENV PYTORCH_KERNEL_CACHE_PATH=/home/yyx/.torch/kernels
+ENV UV_CACHE_DIR=/home/yyx/.cache
+
+# 6. As the 'yyx' user, create the virtual environment in the user's home
+WORKDIR /home/yyx
+RUN python3.12 -m venv venv
+ENV PATH="/home/yyx/venv/bin:/home/yyx/opt/ollama/bin:$PATH"
+RUN mkdir -p /home/yyx/opt/ollama
+RUN curl -L https://ollama.com/download/ollama-linux-amd64.tgz -o ollama-linux-amd64.tgz
+RUN tar -C /home/yyx/opt/ollama -xzf ollama-linux-amd64.tgz
+
+# 7. Conda installation
+WORKDIR /home/yyx/miniconda3
+RUN curl --output /home/yyx/miniconda3/miniconda.sh  "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
+RUN bash /home/yyx/miniconda3/miniconda.sh -b -u -p /home/yyx/miniconda3
+RUN rm /home/yyx/miniconda3/miniconda.sh
+
+
+# Expose port
+EXPOSE 8081
+
+# Set the final working directory for when the container starts
+WORKDIR /data/users/yyx/onProject/CAUST/

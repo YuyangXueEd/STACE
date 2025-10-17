@@ -1,0 +1,111 @@
+# Epic 4: Outer Loop & Multi-Perspective Judging
+
+**Expanded Goal**: Implement the Reporter agent that generates academic-format papers (Introduction, Methods, Experiments, Results, Discussion, Conclusion) with citation integration, and the multi-perspective LLM Judge system with 3-5 personas evaluating findings from different angles. By the end of this epic, AUST completes the full end-to-end autonomous research workflow, generating publishable reports with multi-faceted evaluation.
+
+## Story 4.1: Reporter Agent - Report Structure & Template
+
+As a **researcher**,
+I want **a Reporter agent that generates academic paper structure with proper sections**,
+so that **the system produces publication-ready reports automatically**.
+
+### Acceptance Criteria
+
+1. Reporter agent implemented in `agents/reporter.py`
+2. Report template defined in `configs/report_template.md` with sections: Introduction, Methods, Experiments, Results, Discussion, Conclusion
+3. Reporter accepts inputs: attack traces (all iterations), successful experiments, evaluation results, retrieved paper references
+4. Reporter generates section outlines based on inputs (e.g., Methods describes hypothesis generation + experiment execution workflow)
+5. Generated report saved to `outputs/reports/report_{run_id}.md` in Markdown format
+6. Report includes metadata: date, task type, target unlearning method, number of iterations
+
+## Story 4.2: Reporter Agent - Content Generation with Citations
+
+As a **researcher**,
+I want **the Reporter to populate report sections with detailed content and cite retrieved papers**,
+so that **the generated report is comprehensive and properly attributed**.
+
+### Acceptance Criteria
+
+1. Reporter generates Introduction: problem statement, why unlearning security matters, objectives of the stress test
+2. Reporter generates Methods: describes AUST architecture, hypothesis generation process (including RAG and critic debate), experiment execution, evaluation criteria
+3. Reporter generates Experiments: details the specific unlearning method tested, datasets used, experiment parameters
+4. Reporter generates Results: presents vulnerability discovered (or lack thereof), attack trace summary, evaluation metrics, key observations
+5. Reporter generates Discussion: interprets findings, compares to static benchmarks (if applicable), discusses implications for unlearning robustness
+6. Reporter generates Conclusion: summarizes contribution, limitations, future work
+7. Citations integrated using BibTeX format references from `rag/paper_metadata.json`
+
+## Story 4.3: Attack Trace Enhancement for Report Integration
+
+As a **developer**,
+I want **attack traces to include sufficient detail for direct inclusion in academic reports**,
+so that **the Reporter can use traces as primary evidence**.
+
+### Acceptance Criteria
+
+1. Attack trace format enhanced to include: iteration number, hypothesis rationale, experiment design justification, quantitative results, qualitative observations
+2. Traces document hypothesis evolution showing how critic feedback improved proposals
+3. Traces include failure analysis: why certain hypotheses didn't lead to vulnerabilities
+4. Dual format: JSON (machine-readable) saved to `outputs/attack_traces/trace_{run_id}.json` + Markdown (human-readable) saved to `outputs/attack_traces/trace_{run_id}.md`
+5. Reporter can parse and extract key sections from traces for Results and Discussion sections
+
+## Story 4.4: Judge Persona Definitions
+
+As a **researcher**,
+I want **to define 3-5 LLM judge personas with specific evaluation criteria**,
+so that **the judging system provides diverse, meaningful perspectives**.
+
+### Acceptance Criteria
+
+1. Judge persona definitions created in `configs/judge_personas.yaml` with 3-5 personas:
+   - Security Expert: evaluates practical exploitability, real-world attack feasibility
+   - ML Researcher: evaluates novelty, methodological rigor, scientific contribution
+   - Privacy Advocate: evaluates privacy implications, compliance relevance
+   - Skeptical Reviewer: challenges claims, identifies weaknesses, suggests improvements
+   - Industry Practitioner: evaluates deployment relevance, risk assessment utility
+2. Each persona has: name, role description, evaluation criteria (bullet list), scoring dimensions (e.g., novelty 1-5, rigor 1-5)
+3. Persona prompts specify tone and focus area (e.g., Security Expert is pragmatic and risk-focused)
+
+## Story 4.5: Judge Agent Implementation
+
+As a **researcher**,
+I want **Judge agents that evaluate generated reports from their persona's perspective**,
+so that **the system provides multi-faceted evaluation of findings**.
+
+### Acceptance Criteria
+
+1. Judge agent implemented in `agents/judge.py` that can instantiate any persona from `judge_personas.yaml`
+2. Judge accepts inputs: generated report, attack traces, experiment results
+3. Judge generates structured evaluation: summary assessment, strengths, weaknesses, scoring (per persona's dimensions), recommendations
+4. Each judge evaluation saved to `outputs/judgments/judge_{persona_name}_{run_id}.md`
+5. Judges run independently (can be parallelized if time permits)
+6. All judge outputs aggregated into `outputs/judgments/summary_{run_id}.md`
+
+## Story 4.6: Outer Loop Orchestrator
+
+As a **researcher**,
+I want **an Outer Loop Orchestrator that coordinates Reporter → Judges workflow**,
+so that **the system automatically generates and evaluates reports after vulnerability discovery**.
+
+### Acceptance Criteria
+
+1. Outer Loop Orchestrator implemented in `loop/outer_loop.py`
+2. Orchestrator triggered when inner loop exits with VULNERABILITY_FOUND or max iterations
+3. Orchestrator workflow: call Reporter → wait for report generation → call all Judges → aggregate judgments
+4. Orchestrator logs all outputs and timestamps for reproducibility
+5. Final output package saved to `outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary
+
+## Story 4.7: End-to-End Full System Test
+
+As a **researcher**,
+I want **to run the complete AUST system end-to-end (inner loop + outer loop)**,
+so that **we validate autonomous research workflow from hypothesis to judged report**.
+
+### Acceptance Criteria
+
+1. Execute full system on both tasks: data-based unlearning and concept-erasure
+2. Inner loop discovers at least one vulnerability per task (or reaches max iterations with meaningful attempt)
+3. Reporter generates comprehensive academic-format report for each task
+4. All 3-5 judges evaluate each report and provide diverse perspectives
+5. Attack traces are reproducible (verified with manual re-execution of key steps)
+6. System autonomy validated: ≥ 90% of workflow runs without human intervention (NFR10)
+7. Performance: full system (inner + outer loop) completes within < 5 hours per task (NFR7)
+8. All outputs (reports, traces, judgments) meet quality standards for paper integration

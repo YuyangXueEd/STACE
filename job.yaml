@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+    generateName: camel-
+    labels:
+        kueue.x-k8s.io/queue-name: eidf098ns-user-queue
+spec:
+    parallelism: 1
+    completions: 1
+    template:
+        metadata:
+            generateName: camel
+        spec:
+            containers:
+            - name: camel
+              image: rasin/apps:conda
+              terminationMessagePath: "/tmp/my-log"
+              imagePullPolicy: "Always"
+              command: [ "/bin/bash" ]
+              args: [ "-c", "while true; do sleep 60; done" ]
+              resources:
+                    requests:
+                        cpu: 4
+                        memory: '32Gi'
+                        nvidia.com/gpu: 1
+                    limits:
+                        cpu: 4
+                        memory: '32Gi'
+                        nvidia.com/gpu: 1
+              volumeMounts:
+                    - mountPath: /dev/shm
+                      name: dshm
+                    - mountPath: /data
+                      name: test-nfs
+            restartPolicy: Never
+            securityContext:
+              runAsUser: 25876  #nfs user id
+              runAsGroup: 4451  #nfs group id
+              runAsNonRoot: false
+            volumes:
+            - emptyDir:
+                medium: Memory
+                sizeLimit: 32Gi
+              name: dshm
+            - name: test-nfs
+              nfs:
+                  server: 10.24.6.66
+                  path: /
+
+            nodeSelector:
+                nvidia.com/gpu.product: NVIDIA-H200
