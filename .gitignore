@@ -1,3 +1,13 @@
 # BMAD (local only)
 .bmad-core/
 .bmad-*/
+.claude/
+.clinerules/
+.cursor/
+.github
+.iflow/
+.qwen/
+.vscode/
+web-bundles/
+
+.env
