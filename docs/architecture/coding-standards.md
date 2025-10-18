@@ -34,6 +34,8 @@
 - **Loop state must be persisted after every state transition**: Call `loop_state_repository.save_state()` after each orchestrator state change
 - **Never hardcode API keys or secrets**: Load from environment variables or Kubernetes secrets
 - **All datetime objects must be timezone-aware**: Use `datetime.now(timezone.utc)`, never naive datetimes
+- **CAMEL framework first for agent development**: When developing agents, consult `external/camel` for docs and examples. Use prebuilt CAMEL components (BaseToolkit, ChatAgent, FunctionTool, etc.) before building custom implementations
+- **Always read external tool READMEs first**: When integrating external tools (ESD, DeepUnlearn, etc.), ALWAYS read their official README to understand use cases, hyperparameters, and correct usage. Never make up parameters or usage patterns
 
 ## Language-Specific Guidelines
 
