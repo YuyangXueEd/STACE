@@ -1,16 +1,19 @@
 """Logging configuration for CAUST system.
 
-This module sets up structured JSON logging with correlation ID support
-for request tracing. All production code must use this logging framework
+Provides structured JSON file logging and Rich-enhanced console output with
+correlation ID support. All production code must use this logging framework
 instead of print() statements (per coding standards).
 """
 
 import logging
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 from pythonjsonlogger import jsonlogger
+from rich.console import Console
+from rich.logging import RichHandler
 
 
 # Correlation ID for request tracing (can be set per task/request)
@@ -63,6 +66,7 @@ def setup_logging(
     log_dir: Optional[Path] = None,
     enable_console: bool = True,
     enable_file: bool = True,
+    console_style: str = "rich",
 ) -> logging.Logger:
     """Set up logging configuration for CAUST.
 
@@ -71,6 +75,7 @@ def setup_logging(
         log_dir: Directory for log files (default: logs/)
         enable_console: Enable console output
         enable_file: Enable file output
+        console_style: Console output style ('rich', 'json', or 'plain')
 
     Returns:
         Configured root logger
@@ -82,8 +87,8 @@ def setup_logging(
     # Remove existing handlers
     logger.handlers.clear()
 
-    # JSON formatter
-    formatter = CustomJsonFormatter(
+    # JSON formatter for structured logs
+    json_formatter = CustomJsonFormatter(
         "%(timestamp)s %(level)s %(name)s %(message)s"
     )
 
@@ -91,7 +96,42 @@ def setup_logging(
     if enable_console:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(log_level.upper())
-        console_handler.setFormatter(formatter)
+
+        normalized_style = (console_style or "").lower()
+
+        if normalized_style == "json":
+            console_handler.setFormatter(json_formatter)
+        else:
+            if normalized_style in {"rich", "color"}:
+                no_color = os.getenv("NO_COLOR") is not None
+                console = Console(
+                    file=sys.stdout,
+                    force_terminal=sys.stdout.isatty() and not no_color,
+                    no_color=no_color,
+                    highlight=False,
+                )
+                rich_handler = RichHandler(
+                    console=console,
+                    show_time=True,
+                    show_path=False,
+                    markup=True,
+                    rich_tracebacks=True,
+                    enable_link_path=console.is_terminal and not no_color,
+                    log_time_format="%Y-%m-%d %H:%M:%S",
+                )
+                rich_handler.setFormatter(
+                    logging.Formatter("%(name)s:%(funcName)s - %(message)s")
+                )
+                console_handler = rich_handler
+                console_handler.setLevel(log_level.upper())
+            else:
+                console_handler.setFormatter(
+                    logging.Formatter(
+                        "%(asctime)s | %(levelname)s | %(name)s:%(funcName)s | %(message)s",
+                        datefmt="%Y-%m-%d %H:%M:%S",
+                    )
+                )
+
         logger.addHandler(console_handler)
 
     # File handler
@@ -107,7 +147,7 @@ def setup_logging(
 
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(log_level.upper())
-        file_handler.setFormatter(formatter)
+        file_handler.setFormatter(json_formatter)
         logger.addHandler(file_handler)
 
         logger.info(f"Logging to file: {log_file}")

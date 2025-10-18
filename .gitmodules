@@ -3,3 +3,6 @@
 [submodule "external/DeepUnlearn"]
 	path = external/DeepUnlearn
 	url = https://github.com/xcadet/deepunlearn
+[submodule "external/esd"]
+	path = external/esd
+	url = https://github.com/rohitgandikota/erasing

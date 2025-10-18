@@ -42,6 +42,7 @@ pathlib
 python-dateutil
 tqdm
 pandas
+hf_transfer
 
 # Machine Learning Support
 scikit-learn
@@ -52,6 +53,13 @@ optuna
 timm
 tensorboard
 torchinfo
+
+# MLLM
+diffusers
+transformers
+accelerate
+huggingfacehub[cli]
+sentencepiece
 
 # Data Science
 jupyterlab
@@ -78,4 +86,4 @@ testcontainers
 
 # Logging
 python-json-logger
-
+rich
