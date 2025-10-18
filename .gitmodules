@@ -1,2 +1,5 @@
 # Git submodules configuration for CAUST
 # DeepUnlearn submodule will be added in Story 1.3
+[submodule "external/DeepUnlearn"]
+	path = external/DeepUnlearn
+	url = https://github.com/xcadet/deepunlearn

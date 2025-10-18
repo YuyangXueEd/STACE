@@ -12,6 +12,10 @@ torchaudio
 # CAMEL-AI cloned from https://github.com/camel-ai/camel.git to external/camel/
 -e external/camel
 
+# DeepUnlearn (installed in dev/editable mode)
+# DeepUnlearn added as git submodule from https://github.com/xcadet/deepunlearn
+-e external/DeepUnlearn
+
 # LLM/VLM API Client
 openai  # For OpenRouter API compatibility
 
@@ -25,6 +29,9 @@ pydantic-settings
 # Configuration Management
 PyYAML
 python-dotenv
+hydra-core
+hydra-zen
+hydra-submitit-launcher
 
 # HTTP Clients
 httpx
@@ -33,7 +40,21 @@ requests
 # Utilities
 pathlib
 python-dateutil
-pythonjsonlogger
+tqdm
+pandas
+
+# Machine Learning Support
+scikit-learn
+numpy
+matplotlib
+seaborn
+optuna
+timm
+tensorboard
+torchinfo
+
+# Data Science
+jupyterlab
 
 # Development Tools
 pytest
@@ -45,6 +66,8 @@ pytest-cov
 black
 ruff
 mypy
+flake8
+isort
 
 # Type Stubs
 types-PyYAML
