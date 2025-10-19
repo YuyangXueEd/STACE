@@ -54,11 +54,18 @@ timm
 tensorboard
 torchinfo
 
+# Evaluation Tools
+torchmetrics
+torch-fidelity
+nudenet
+
 # MLLM
 diffusers
+safetensors
+huggingface_hub
 transformers
 accelerate
-huggingfacehub[cli]
+huggingface_hub[cli]
 sentencepiece
 
 # Data Science

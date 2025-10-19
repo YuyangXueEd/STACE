@@ -25,19 +25,33 @@ Supported models:
 Supported unlearning methods:
 - ESD with variants: 'xattn' (default), 'noxattn', 'full', 'selfattn'
 """
-import os
 import importlib.util
+import os
+import shlex
+import shutil
 import subprocess
 import sys
-from typing import Dict, Any, Optional
-from pydantic import BaseModel, Field
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+import torch
+from pydantic import BaseModel, Field
 
 from camel.toolkits import FunctionTool
 from camel.toolkits.base import BaseToolkit
 from camel.utils import MCPServer
 from camel.logger import get_logger
+
+try:  # pragma: no cover - optional dependency handled at runtime
+    from huggingface_hub import snapshot_download
+except ImportError:  # pragma: no cover - fallback if hub not installed
+    snapshot_download = None
+
+try:  # pragma: no cover - optional dependency handled at runtime
+    from safetensors.torch import save_file
+except ImportError:  # pragma: no cover - fallback if safetensors missing
+    save_file = None
 
 logger = get_logger(__name__)
 
@@ -50,6 +64,7 @@ class ModelConfig(BaseModel):
         default_steps: Default number of unlearning training steps
         default_guidance_scale: Default guidance scale for diffusion
         esd_script: Script name for ESD training (e.g., 'esd_sd.py')
+        weight_paths: Preferred relative paths to base weights within the HF snapshot
     """
     name: str = Field(..., description="Model identifier")
     model_id: str = Field(..., description="Hugging Face model ID")
@@ -59,6 +74,14 @@ class ModelConfig(BaseModel):
         description="Default guidance scale"
     )
     esd_script: str = Field(..., description="ESD training script name")
+    weight_paths: tuple[str, ...] = Field(
+        default=(
+            "unet/diffusion_pytorch_model.safetensors",
+            "unet/diffusion_pytorch_model.bin",
+            "unet/diffusion_pytorch_model.pt",
+        ),
+        description="Relative path or glob patterns (in preference order) to locate base weights.",
+    )
 
     class Config:
         frozen = True
@@ -71,21 +94,36 @@ MODELS: Dict[str, ModelConfig] = {
         model_id="CompVis/stable-diffusion-v1-4",
         default_steps=200,
         default_guidance_scale=3.0,
-        esd_script="esd_sd.py"
+        esd_script="esd_sd.py",
+        weight_paths=(
+            "unet/diffusion_pytorch_model.safetensors",
+            "unet/diffusion_pytorch_model.bin",
+            "unet/diffusion_pytorch_model.pt",
+        ),
     ),
     "sdxl": ModelConfig(
         name="sdxl",
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
         default_steps=200,
         default_guidance_scale=7.0,
-        esd_script="esd_sdxl.py"
+        esd_script="esd_sdxl.py",
+        weight_paths=(
+            "unet/diffusion_pytorch_model.safetensors",
+            "unet/diffusion_pytorch_model.bin",
+            "unet/diffusion_pytorch_model.pt",
+        ),
     ),
     "flux": ModelConfig(
         name="flux",
         model_id="black-forest-labs/FLUX.1-dev",
         default_steps=200,
         default_guidance_scale=7.0,
-        esd_script="esd_flux.py"
+        esd_script="esd_flux.py",
+        weight_paths=(
+            "transformer/diffusion_pytorch_model*.safetensors",
+            "transformer/diffusion_pytorch_model*.bin",
+            "transformer/diffusion_pytorch_model*.pt",
+        ),
     )
 }
 
@@ -157,6 +195,7 @@ class ConceptUnlearnToolkit(BaseToolkit):
         self.esd_dir = (self.project_root / esd_dir).resolve()
         self.verbose = verbose
         self.default_timeout = int(timeout) if timeout is not None else 7200
+        self.base_model_cache_dir = self.project_root / "data" / "base_models"
 
         # Verify ESD directory exists
         if not self.esd_dir.exists():
@@ -259,9 +298,133 @@ class ConceptUnlearnToolkit(BaseToolkit):
                 f"ESD training timed out after {effective_timeout}s. "
                 "Consider reducing iterations or using a faster GPU."
             )
-        except Exception as e:
-            logger.error(f"Command execution failed: {str(e)}")
-            raise ConceptUnlearnError(f"Command failed: {str(e)}") from e
+
+    # ------------------------------------------------------------------ #
+    # Base model management
+    # ------------------------------------------------------------------ #
+
+    def _ensure_cached_base_model(self, model_config: ModelConfig) -> Optional[Path]:
+        """
+        Download and cache the base model UNet weights for later reuse.
+
+        Returns:
+            Path to cached `basemodel.safetensors` if successful, otherwise None.
+        """
+        cache_dir = self.base_model_cache_dir / model_config.name
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cached_snapshot = cache_dir / "basemodel.safetensors"
+        if cached_snapshot.exists():
+            return cached_snapshot
+
+        if snapshot_download is None:
+            logger.warning(
+                "huggingface_hub is not available; cannot cache base model '%s'.",
+                model_config.model_id,
+            )
+            return None
+
+        if save_file is None:
+            logger.warning(
+                "safetensors is not available; cannot cache base model '%s'.",
+                model_config.model_id,
+            )
+            return None
+
+        logger.info(
+            "Caching base model weights for '%s' (repo: %s)",
+            model_config.name,
+            model_config.model_id,
+        )
+
+        try:
+            repo_dir = Path(
+                snapshot_download(
+                    repo_id=model_config.model_id,
+                    allow_patterns=list(model_config.weight_paths),
+                    local_dir=str(cache_dir / "snapshot"),
+                    local_dir_use_symlinks=False,
+                    resume_download=True,
+                )
+            )
+        except Exception as exc:  # pragma: no cover - network dependent
+            logger.error(
+                "Failed to download base model '%s': %s",
+                model_config.model_id,
+                exc,
+                exc_info=True,
+            )
+            return None
+
+        candidate: Optional[Path] = None
+        for rel_path in model_config.weight_paths:
+            if any(char in rel_path for char in "*?[]"):
+                matches = sorted(repo_dir.glob(rel_path))
+                if matches:
+                    candidate = matches[0]
+                    break
+                continue
+
+            candidate_path = repo_dir / rel_path
+            if candidate_path.exists():
+                candidate = candidate_path
+                break
+
+        if candidate is None:
+            logger.error(
+                "Could not locate expected weights within snapshot for '%s'.",
+                model_config.model_id,
+            )
+            return None
+
+        try:
+            if candidate.suffix == ".safetensors":
+                shutil.copy2(candidate, cached_snapshot)
+            else:
+                state_dict = torch.load(candidate, map_location="cpu")
+                if not isinstance(state_dict, dict):
+                    logger.error(
+                        "Unexpected state dict type when loading base model '%s'.",
+                        candidate,
+                    )
+                    return None
+                save_file(state_dict, str(cached_snapshot))
+        except Exception as exc:  # pragma: no cover - filesystem/runtime
+            logger.error(
+                "Failed to cache base model weights from '%s': %s",
+                candidate,
+                exc,
+                exc_info=True,
+            )
+            return None
+
+        logger.info("Cached base model snapshot at %s", cached_snapshot)
+        return cached_snapshot
+
+    def _stage_base_model(
+        self,
+        model_config: ModelConfig,
+        output_path: Path,
+    ) -> Optional[Path]:
+        """Copy cached base model snapshot into the concept output directory."""
+        cached_snapshot = self._ensure_cached_base_model(model_config)
+        if cached_snapshot is None:
+            return None
+
+        destination = output_path / "basemodel.safetensors"
+        if destination.exists():
+            return destination
+
+        try:
+            shutil.copy2(cached_snapshot, destination)
+            logger.info("Placed base model snapshot at %s", destination)
+            return destination
+        except Exception as exc:  # pragma: no cover - filesystem
+            logger.warning(
+                "Failed to copy cached base model to '%s': %s",
+                destination,
+                exc,
+            )
+            return None
 
     def erase_concept_esd(
         self,
@@ -304,6 +467,7 @@ class ConceptUnlearnToolkit(BaseToolkit):
                 - model (str): Model that was modified
                 - method_variant (str): ESD variant used
                 - iterations (int): Number of training iterations
+                - base_model_path (Optional[str]): Path to cached base model snapshot
                 - timestamp (str): ISO format timestamp
 
         Raises:
@@ -425,35 +589,80 @@ class ConceptUnlearnToolkit(BaseToolkit):
 
         # Set output directory
         if output_dir is None:
-            output_dir = str(
-                self.project_root / "data" / "unlearned_models" / "esd" /
-                model / concept.replace(" ", "_")
+            output_path = (
+                self.project_root
+                / "data"
+                / "unlearned_models"
+                / "esd"
+                / model
+                / concept.replace(" ", "_")
             )
         else:
-            output_dir = str(Path(output_dir).resolve())
+            output_path = Path(output_dir).resolve()
 
         # Create output directory
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        output_path.mkdir(parents=True, exist_ok=True)
 
-        # Build command
+        is_flux_model = model_config.name == "flux"
+        base_model_snapshot = self._stage_base_model(model_config, output_path)
+
         script = model_config.esd_script
-        command_parts = [
-            f"python {script}",
-            f"--erase_concept '{concept}'",
-            f"--train_method {train_method}",
-            f"--iterations {iterations}",
-            f"--lr {learning_rate}",
-            f"--guidance_scale {guidance_scale}",
-            f"--negative_guidance {negative_guidance}",
-            f"--save_path '{output_dir}'"
-        ]
 
-        command = " ".join(command_parts)
+        # NOTE: Intentionally omit the optional `--erase_from` flag so the ESD script
+        # keeps its internal erase-from prompt unset. Reusing the target concept for
+        # that argument double-counts it during training (see external/esd/esd_sd.py).
+        if is_flux_model:
+            command_args = [
+                "python",
+                script,
+                "--erase_concept",
+                concept,
+                "--train_method",
+                train_method,
+                "--negative_guidance",
+                str(negative_guidance),
+                "--iterations",
+                str(iterations),
+                "--lr",
+                str(learning_rate),
+                "--save_path",
+                str(output_path),
+                "--basemodel_id",
+                model_config.model_id,
+            ]
+        else:
+            command_args = [
+                "python",
+                script,
+                "--erase_concept",
+                concept,
+                "--train_method",
+                train_method,
+                "--iterations",
+                str(iterations),
+                "--lr",
+                str(learning_rate),
+                "--guidance_scale",
+                str(guidance_scale),
+                "--negative_guidance",
+                str(negative_guidance),
+                "--save_path",
+                str(output_path),
+            ]
+
+        command = " ".join(shlex.quote(arg) for arg in command_args)
 
         logger.info(
             f"Erasing concept '{concept}' from {model} using ESD "
             f"(variant: {train_method}, iterations: {iterations})"
         )
+        if base_model_snapshot is not None:
+            logger.info("Base model snapshot staged at %s", base_model_snapshot)
+        elif model_config.name != "flux":
+            logger.warning(
+                "Base model snapshot could not be staged for %s; proceeding without cached baseline.",
+                model_config.name,
+            )
 
         # Execute training
         try:
@@ -471,13 +680,16 @@ class ConceptUnlearnToolkit(BaseToolkit):
                 )
 
             # Find the checkpoint file
-            checkpoint_files = list(Path(output_dir).glob("*.safetensors"))
+            checkpoint_files = list(output_path.glob("*.safetensors"))
             if not checkpoint_files:
                 raise ConceptUnlearnError(
-                    f"No checkpoint found in {output_dir} after training"
+                    f"No checkpoint found in {output_path} after training"
                 )
 
             checkpoint_path = str(checkpoint_files[0])
+            base_snapshot_path = (
+                str(base_model_snapshot) if base_model_snapshot and Path(base_model_snapshot).exists() else None
+            )
 
             logger.info(
                 f"Successfully erased concept '{concept}' from {model}. "
@@ -493,6 +705,7 @@ class ConceptUnlearnToolkit(BaseToolkit):
                 'iterations': iterations,
                 'learning_rate': learning_rate,
                 'guidance_scale': guidance_scale,
+                'base_model_path': base_snapshot_path,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             }
 
