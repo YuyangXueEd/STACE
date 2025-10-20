@@ -10,6 +10,7 @@
 .vscode/
 web-bundles/
 .papers/
+.paper_cards/
 data/
 .backup/
 

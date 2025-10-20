@@ -678,7 +678,14 @@ class PaperCardPdfAgent:
             raise RuntimeError(
                 f"Chat completion failed ({response.status_code}): {response.text}"
             )
-        return response.json()
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            snippet = response.text[:2000]
+            raise RuntimeError(
+                f"Failed to parse OpenRouter response as JSON: {exc}. Raw response snippet: {snippet}"
+            ) from exc
 
     @staticmethod
     def _extract_chat_content(response_json: Dict[str, Any]) -> str:

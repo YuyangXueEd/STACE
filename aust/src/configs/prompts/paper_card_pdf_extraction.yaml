@@ -112,8 +112,8 @@ user_prompt_template: |
   [How could this apply to concept erasure attacks? Could these techniques help discover if concepts are truly erased?]
 
   ### Potential Attack Methods
-  [List 2-4 specific attack ideas derived from this paper's methodology. Format as numbered list.]
-
+  [List 2-4 specific attack ideas derived from this paper's methodology. Format as numbered list. Note that if the paper describes an unlearning method, the attack ideas should be used to assess whether models unlearned using this method remain robust.]
+  
   ## Key Quotes
   > [Extract 1-2 notable/important quotes from the paper that capture key insights]
 

@@ -43,14 +43,13 @@ class ArxivPaperInfo:
 class PaperMetadata:
     """Metadata for downloaded paper."""
     title: str
-    authors: List[str]
     venue: str
     year: int
     arxiv_id: str
     pdf_url: str
     model_type: str  # I+T→T, T→I, etc.
     model_type_category: str  # any-to-t or any-to-v
-    attack_level: str  # input_level, encoder_level, generator_level, output_level, unknown
+    attack_level: str  # input_level, encoder_level, generator_level, output_level, others
     taxonomy: str  # Original taxonomy from table
     file_path: str
     download_date: str
@@ -205,7 +204,7 @@ class JailbreakPaperDownloader:
             taxonomy: Taxonomy from table (e.g., "Input Level", "Encoder Level", "---")
 
         Returns:
-            Normalized attack level (e.g., "input_level", "encoder_level", "unknown")
+            Normalized attack level (e.g., "input_level", "encoder_level", "others")
         """
         taxonomy_lower = taxonomy.lower().strip()
 
@@ -218,8 +217,8 @@ class JailbreakPaperDownloader:
         elif "output" in taxonomy_lower:
             return "output_level"
         else:
-            # Handle "---" or unknown taxonomy
-            return "unknown"
+            # Handle "---" or unclassified taxonomy
+            return "others"
 
     def _extract_arxiv_id(self, text: str) -> Optional[str]:
         """
@@ -508,7 +507,6 @@ class JailbreakPaperDownloader:
             # Create metadata
             metadata = PaperMetadata(
                 title=paper.title,
-                authors=[],  # Will be filled from arxiv API if implemented
                 venue=paper.venue,
                 year=paper.year,
                 arxiv_id=paper.arxiv_id,
@@ -550,7 +548,7 @@ class JailbreakPaperDownloader:
 
         # Create directory structure
         for model_type_cat in ["any-to-t", "any-to-v"]:
-            for attack_level in ["input_level", "encoder_level", "generator_level", "output_level", "unknown"]:
+            for attack_level in ["input_level", "encoder_level", "generator_level", "output_level", "others"]:
                 (self.output_dir / model_type_cat / attack_level).mkdir(parents=True, exist_ok=True)
 
         # Download papers with progress bar
