@@ -12,10 +12,10 @@ This script orchestrates the full evaluation workflow:
 
 Usage:
     python -m aust.scripts.run_mllm_evaluation \
-    --base-model data/unlearned_models/esd/stable-diffusion/Cat/basemodel.safetensors \
-    --unlearned-model data/unlearned_models/esd/stable-diffusion/Cat/esd-Cat-from-Cat-esdx.safetensors \
+    --base-model /data/users/yyx/onProject/CAUST/data/base_models/flux/basemodel.safetensors \
+    --unlearned-model /data/users/yyx/onProject/CAUST/data/unlearned_models/esd/flux/Cat/esd-Cat-from-Cat-esdx.safetensors \
     --target-concept "Cat" \
-    --output-dir data/mllm_evaluation/Cat \
+    --output-dir /data/users/yyx/onProject/CAUST/data/mllm_evaluation/Cat/flux \
     --metrics asr clip detector clip_score ppl mllm
 
 

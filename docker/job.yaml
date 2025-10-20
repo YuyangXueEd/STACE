@@ -20,12 +20,12 @@ spec:
               args: [ "-c", "while true; do sleep 60; done" ]
               resources:
                     requests:
-                        cpu: 4
-                        memory: '32Gi'
+                        cpu: 16
+                        memory: '128Gi'
                         nvidia.com/gpu: 1
                     limits:
-                        cpu: 4
-                        memory: '32Gi'
+                        cpu: 16
+                        memory: '128Gi'
                         nvidia.com/gpu: 1
               volumeMounts:
                     - mountPath: /dev/shm

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
+from collections import OrderedDict
 
 import torch
 from camel.agents.chat_agent import ChatAgent
@@ -37,6 +38,11 @@ try:
     from diffusers import DiffusionPipeline
 except ImportError:  # pragma: no cover - optional dependency for generation
     DiffusionPipeline = None
+
+try:
+    from diffusers import FluxPipeline
+except ImportError:  # pragma: no cover - optional dependency for generation
+    FluxPipeline = None
 
 try:
     from safetensors.torch import load_file as load_safetensors
@@ -408,11 +414,11 @@ class MLLMEvaluator:
         self,
         inputs: EvaluationInputs,
     ):
-        """Load diffusion pipeline and apply unlearned weights."""
-        if DiffusionPipeline is None:
+        """Load diffusion (or Flux) pipeline and apply unlearned weights."""
+        if DiffusionPipeline is None and FluxPipeline is None:
             logger.warning(
-                "DiffusionPipeline not available; install diffusers to enable "
-                "image generation."
+                "No compatible diffusion pipelines available; install diffusers to "
+                "enable image generation."
             )
             return None
 
@@ -427,31 +433,79 @@ class MLLMEvaluator:
 
         dtype = torch.float16 if self.device.startswith("cuda") else torch.float32
 
+        base_model_id = self._resolve_base_model(inputs)
+        model_tokens = {part.lower() for part in model_path.parts}
+        model_tokens.add(model_path.stem.lower())
+        if base_model_id:
+            model_tokens.add(base_model_id.lower())
+        is_flux = any("flux" in token for token in model_tokens)
+
+        if is_flux:
+            if self.device.startswith("cuda") and torch.cuda.is_available():
+                dtype = torch.bfloat16
+            else:
+                dtype = torch.float32
+
         try:
             if model_path.is_dir():
                 logger.info(
-                    "Loading unlearned diffusion pipeline from directory %s", model_path
+                    "Loading unlearned %s pipeline from directory %s",
+                    "Flux" if is_flux else "diffusion",
+                    model_path,
                 )
-                pipeline = DiffusionPipeline.from_pretrained(
-                    str(model_path),
-                    torch_dtype=dtype,
-                )
+                if is_flux:
+                    if FluxPipeline is None:
+                        logger.warning(
+                            "FluxPipeline not available; install diffusers>=0.31 to load Flux models."
+                        )
+                        return None
+                    pipeline = FluxPipeline.from_pretrained(
+                        str(model_path),
+                        torch_dtype=dtype,
+                    )
+                else:
+                    if DiffusionPipeline is None:
+                        logger.warning(
+                            "DiffusionPipeline not available; cannot load model directory."
+                        )
+                        return None
+                    pipeline = DiffusionPipeline.from_pretrained(
+                        str(model_path),
+                        torch_dtype=dtype,
+                    )
             else:
-                base_model_id = self._resolve_base_model(inputs)
                 if base_model_id is None:
                     logger.warning("Unable to resolve base model for generation.")
                     return None
 
                 logger.info(
-                    "Loading diffusion pipeline '%s' with dtype=%s on device=%s",
+                    "Loading %s pipeline '%s' with dtype=%s on device=%s",
+                    "Flux" if is_flux else "diffusion",
                     base_model_id,
                     dtype,
                     self.device,
                 )
-                pipeline = DiffusionPipeline.from_pretrained(
-                    base_model_id,
-                    torch_dtype=dtype,
-                )
+                if is_flux:
+                    if FluxPipeline is None:
+                        logger.warning(
+                            "FluxPipeline not available; install diffusers>=0.31 to load Flux models."
+                        )
+                        return None
+                    pipeline = FluxPipeline.from_pretrained(
+                        base_model_id,
+                        torch_dtype=dtype,
+                    )
+                else:
+                    if DiffusionPipeline is None:
+                        logger.warning(
+                            "DiffusionPipeline not available; cannot load model '%s'.",
+                            base_model_id,
+                        )
+                        return None
+                    pipeline = DiffusionPipeline.from_pretrained(
+                        base_model_id,
+                        torch_dtype=dtype,
+                    )
                 if load_safetensors is None:
                     logger.warning(
                         "safetensors not available; cannot load weights from %s",
@@ -461,8 +515,20 @@ class MLLMEvaluator:
 
                 try:
                     weights = load_safetensors(str(model_path))
-                    missing, unexpected = pipeline.unet.load_state_dict(
-                        weights, strict=False
+                    state_dict = OrderedDict((key, tensor) for key, tensor in weights.items())
+                    if is_flux:
+                        target_module = getattr(pipeline, "transformer", None)
+                    else:
+                        target_module = getattr(pipeline, "unet", None)
+                    if target_module is None:
+                        logger.error(
+                            "Pipeline missing expected module to load weights (is_flux=%s).",
+                            is_flux,
+                        )
+                        return None
+
+                    missing, unexpected = target_module.load_state_dict(
+                        state_dict, strict=False
                     )
                     if missing:
                         logger.debug(
@@ -483,7 +549,8 @@ class MLLMEvaluator:
                     )
                     return None
 
-            pipeline.set_progress_bar_config(disable=True)
+            if hasattr(pipeline, "set_progress_bar_config"):
+                pipeline.set_progress_bar_config(disable=True)
             pipeline = pipeline.to(self.device)
             if hasattr(pipeline, "enable_attention_slicing"):
                 pipeline.enable_attention_slicing()
@@ -497,11 +564,11 @@ class MLLMEvaluator:
         self,
         inputs: EvaluationInputs,
     ):
-        """Load diffusion pipeline representing the base (pre-unlearning) model."""
-        if DiffusionPipeline is None:
+        """Load diffusion (or Flux) pipeline representing the base model."""
+        if DiffusionPipeline is None and FluxPipeline is None:
             logger.warning(
-                "DiffusionPipeline not available; install diffusers to enable "
-                "reference image generation."
+                "No compatible diffusion pipelines available; install diffusers to "
+                "generate reference images."
             )
             return None
 
@@ -528,18 +595,66 @@ class MLLMEvaluator:
             logger.warning("Unable to resolve base model for reference generation.")
             return None
 
+        tokens: set[str] = set()
+        if isinstance(base_source, (str, Path)):
+            tokens.update(str(base_source).lower().replace("\\", "/").split("/"))
+        if base_weights is not None:
+            tokens.update(part.lower() for part in base_weights.parts)
+            tokens.add(base_weights.stem.lower())
+        tokens.update(str(inputs.unlearned_model_path).lower().replace("\\", "/").split("/"))
+        is_flux = any("flux" in token for token in tokens)
+
+        if is_flux:
+            if self.device.startswith("cuda") and torch.cuda.is_available():
+                dtype = torch.bfloat16
+            else:
+                dtype = torch.float32
+
         try:
-            logger.info("Loading base diffusion pipeline from %s", base_source)
-            pipeline = DiffusionPipeline.from_pretrained(
-                str(base_source),
-                torch_dtype=dtype,
+            logger.info(
+                "Loading base %s pipeline from %s",
+                "Flux" if is_flux else "diffusion",
+                base_source,
             )
+            if is_flux:
+                if FluxPipeline is None:
+                    logger.warning(
+                        "FluxPipeline not available; install diffusers>=0.31 to enable Flux support."
+                    )
+                    return None
+                pipeline = FluxPipeline.from_pretrained(
+                    str(base_source),
+                    torch_dtype=dtype,
+                )
+            else:
+                if DiffusionPipeline is None:
+                    logger.warning(
+                        "DiffusionPipeline not available; cannot load base model '%s'.",
+                        base_source,
+                    )
+                    return None
+                pipeline = DiffusionPipeline.from_pretrained(
+                    str(base_source),
+                    torch_dtype=dtype,
+                )
 
             if base_weights and load_safetensors is not None:
                 try:
                     weights = load_safetensors(str(base_weights))
-                    missing, unexpected = pipeline.unet.load_state_dict(
-                        weights, strict=False
+                    state_dict = OrderedDict((key, tensor) for key, tensor in weights.items())
+                    if is_flux:
+                        target_module = getattr(pipeline, "transformer", None)
+                    else:
+                        target_module = getattr(pipeline, "unet", None)
+                    if target_module is None:
+                        logger.error(
+                            "Pipeline missing expected module to load base weights (is_flux=%s).",
+                            is_flux,
+                        )
+                        return None
+
+                    missing, unexpected = target_module.load_state_dict(
+                        state_dict, strict=False
                     )
                     if missing:
                         logger.debug(
@@ -565,7 +680,8 @@ class MLLMEvaluator:
                     base_weights,
                 )
 
-            pipeline.set_progress_bar_config(disable=True)
+            if hasattr(pipeline, "set_progress_bar_config"):
+                pipeline.set_progress_bar_config(disable=True)
             pipeline = pipeline.to(self.device)
             if hasattr(pipeline, "enable_attention_slicing"):
                 pipeline.enable_attention_slicing()
