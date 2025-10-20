@@ -15,7 +15,7 @@ RUN bash nodesource_setup.sh
 RUN apt-get update && \
     apt-get install -y --no-install-recommends bash \
     build-essential git git-lfs ca-certificates libsndfile1-dev libgl1 screen \
-    python3.12 python3.12-dev nvtop python3-pip python3.12-venv nodejs cmake nano && \
+    python3.12 python3.12-dev nvtop python3-pip python3.12-venv nodejs cmake nano ghostscript && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

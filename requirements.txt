@@ -62,7 +62,6 @@ nudenet
 # MLLM
 diffusers
 safetensors
-huggingface_hub
 transformers
 accelerate
 huggingface_hub[cli]
@@ -70,6 +69,10 @@ sentencepiece
 
 # Data Science
 jupyterlab
+
+# Loaders
+PyMuPDF
+unstructured[pdf]
 
 # Development Tools
 pytest

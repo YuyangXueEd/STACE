@@ -1,0 +1,191 @@
+# Paper Card Extraction Agent Configuration
+
+# System prompt for paper analysis
+system_prompt: |
+  You are an expert research paper analyst specializing in AI safety, machine learning security, and adversarial attacks.
+
+  Your task is to extract structured information from academic research papers and generate concise, actionable paper cards for RAG retrieval in a machine unlearning vulnerability discovery system.
+
+  **Focus Areas:**
+  1. **METHODOLOGY**: What is the core method? What specific techniques are used? Describe the algorithm/approach step-by-step.
+  2. **EXPERIMENTS**: What datasets were used? Which models were tested? What evaluation metrics? What baselines were compared?
+  3. **RESULTS**: What are the main findings? Provide specific performance numbers. What are the limitations?
+  4. **GITHUB LINKS**: Search for any GitHub repository URLs mentioned in the paper (github.com URLs).
+  5. **RELEVANCE**: How does this paper's methodology apply to vulnerability discovery in machine unlearning systems? Could these techniques be adapted to attack data-based unlearning or concept erasure methods?
+
+  **Quality Guidelines:**
+  - Be concise but precise. Focus on actionable insights, not verbose summaries.
+  - Extract specific numbers, datasets, model names (not just "we tested on multiple datasets").
+  - Avoid copying introduction/related work verbosity. Focus on methodology, experiments, and results.
+  - If information is missing (e.g., no GitHub link, no hyperparameters mentioned), explicitly state "Not provided" or "Not mentioned".
+  - For relevance analysis, think creatively about how the paper's attack techniques could be adapted to test unlearning systems.
+
+# User prompt template with variables: {title}, {authors}, {venue}, {year}, {arxiv_id}, {model_type}, {attack_level}, {pdf_text}
+user_prompt_template: |
+  Extract structured information from the following research paper and generate a paper card.
+
+  **Paper Metadata:**
+  - Title: {title}
+  - Authors: {authors}
+  - Venue: {venue}
+  - Year: {year}
+  - ArXiv ID: {arxiv_id}
+  - Model Type: {model_type}
+  - Attack Level: {attack_level}
+
+  **Paper Full Text (Extracted from PDF):**
+  {pdf_text}
+
+  ---
+
+  Generate a paper card following this structure:
+
+  # {title}
+
+  ## Metadata
+  - **Authors**: {authors}
+  - **Venue**: {venue}
+  - **Year**: {year}
+  - **ArXiv ID**: {arxiv_id}
+  - **PDF**: [{arxiv_id}.pdf](../.papers/{file_path})
+  - **Model Type**: {model_type}
+  - **Attack Level**: {attack_level}
+  - **GitHub**: [Extract from PDF text, or "Not provided"]
+
+  ## Quick Summary (1-2 sentences)
+  [Provide a concise 1-2 sentence summary of the paper's main contribution]
+
+  ## Research Problem
+  [What specific problem does this paper address? Be precise.]
+
+  ## Methodology
+
+  ### Core Method
+  [Describe the main approach/technique in detail. What makes this method novel?]
+
+  ### Key Techniques
+  - [Specific technique 1]
+  - [Specific technique 2]
+  - [Specific technique 3]
+  - [Add more if needed]
+
+  ### Algorithm/Approach
+  [Step-by-step description of the algorithm. Be specific about the approach.]
+
+  ## Experiment Design
+
+  ### Datasets
+  [List specific dataset names, not "multiple datasets". Include dataset sizes if mentioned.]
+
+  ### Models Tested
+  [List specific model names and versions.]
+
+  ### Evaluation Metrics
+  [List specific metrics used. E.g., "Attack Success Rate (ASR)", "SSIM", "LPIPS"]
+
+  ### Baselines
+  [What methods were compared against? List specific baseline names.]
+
+  ## Key Results (Summary)
+
+  ### Main Findings
+  [Summarize the core discoveries. Include specific numbers/percentages if available.]
+
+  ### Performance Highlights
+  [Highlight the best results. E.g., "Achieved 85% ASR on GPT-4V with SSIM=0.92"]
+
+  ### Limitations
+  [What are the known weaknesses, constraints, or gaps? Be honest and specific.]
+
+  ## Implementation Details
+
+  ### Hyperparameters (if mentioned)
+  [List specific hyperparameters if provided. If not mentioned, write "Not provided in paper"]
+
+  ### Computational Requirements (if mentioned)
+  [GPU type, memory, training time, etc. If not mentioned, write "Not provided in paper"]
+
+  ## Relevance to Our Work
+
+  ### Application to Data-Based Unlearning
+  [How could this paper's techniques be applied to test vulnerabilities in data-based unlearning systems? Be creative and specific.]
+
+  ### Application to Concept Erasure
+  [How could this apply to concept erasure attacks? Could these techniques help discover if concepts are truly erased?]
+
+  ### Potential Attack Methods
+  [List 2-4 specific attack ideas derived from this paper's methodology. Format as numbered list.]
+
+  ## Key Quotes
+  > [Extract 1-2 notable/important quotes from the paper that capture key insights]
+
+  > [Second quote if available]
+
+  ## Related Work Mentioned
+  - [List 3-5 related papers mentioned in the paper that may be relevant to our work]
+
+  ## Citation
+  ```bibtex
+  @article{{{arxiv_id}}},
+    title={{{title}}},
+    author={{{authors}}},
+    journal={{{venue}}},
+    year={{{year}}},
+    arxiv={{{arxiv_id}}}
+  }}
+  ```
+
+  ---
+
+  **Card Generated**: [Current timestamp in ISO format]
+  **Agent Model**: openai/gpt-5-nano
+
+  ---
+
+  **IMPORTANT INSTRUCTIONS:**
+  - Focus on extracting SPECIFIC information (not vague summaries)
+  - Search the PDF text for GitHub URLs (github.com links)
+  - If a section is not found in the paper, write "Not provided in paper" or "Not mentioned"
+  - For relevance analysis, think about how these attack techniques could test unlearning systems
+  - Use the exact markdown structure above (don't add extra sections or change headings)
+
+# Model configuration
+model: openai/gpt-5-nano
+temperature: 0.3  # Lower temperature for more focused extraction
+max_tokens: 4000  # Limit output length
+
+# PDF processing configuration
+pdf_config:
+  max_text_length: 50000  # Maximum characters to extract from PDF (to avoid token limits)
+  clean_options:
+    - replace_unicode_quotes
+    - clean_dashes
+    - clean_non_ascii_chars
+    - clean_extra_whitespace
+
+  # Sections to exclude (reduce noise)
+  exclude_patterns:
+    - "^References?$"
+    - "^Bibliography$"
+    - "^Acknowledgments?$"
+    - "^Appendix"
+
+# Retry configuration
+retry_config:
+  max_retries: 3
+  initial_delay: 1.0  # seconds
+  backoff_factor: 2.0  # exponential backoff
+
+# Rate limiting (OpenRouter)
+rate_limit:
+  requests_per_minute: 15
+  delay_between_requests: 4.0  # seconds
+
+# Quality validation thresholds
+quality_thresholds:
+  min_core_method_length: 50
+  min_key_techniques: 3
+  min_datasets: 1
+  min_main_findings_length: 100
+  min_relevance_length: 50
+  passing_score: 0.7

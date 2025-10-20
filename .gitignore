@@ -11,6 +11,11 @@
 web-bundles/
 .papers/
 data/
+.backup/
+
+# Paper cards - gitignore progress/logs but track markdown cards
+.paper_cards/.generation_progress.json
+.paper_cards/.failed_extractions.json
 
 
 .env

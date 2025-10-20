@@ -97,7 +97,8 @@ class JailbreakPaperDownloader:
 
     # Repository URLs
     GITHUB_README_URL = "https://raw.githubusercontent.com/liuxuannan/Awesome-Multimodal-Jailbreak/main/README.md"
-    ARXIV_PDF_BASE = "https://arxiv.org/pdf"
+    # Use export.arxiv.org for direct PDF downloads (arxiv.org/pdf returns HTML redirects)
+    ARXIV_PDF_BASE = "https://export.arxiv.org/pdf"
 
     # User agent for requests
     USER_AGENT = "CAUST-PaperDownloader/1.0 (Research; mailto:user@example.com)"
@@ -390,10 +391,11 @@ class JailbreakPaperDownloader:
                 taxonomy = taxonomy_cell.strip() if taxonomy_cell else "---"
 
                 # Create paper info
+                # Note: ArXiv PDF URLs should NOT have .pdf extension (causes HTML redirect page)
                 paper = ArxivPaperInfo(
                     title=title,
                     arxiv_id=arxiv_id,
-                    pdf_url=f"{self.ARXIV_PDF_BASE}/{arxiv_id}.pdf",
+                    pdf_url=f"{self.ARXIV_PDF_BASE}/{arxiv_id}",
                     venue=venue,
                     year=year,
                     model_type=model_type,
