@@ -22,6 +22,7 @@ The technology stack selections below are the **single source of truth** for AUS
 | **Containerization** | Docker | 24.0.7 | Application containerization | Provides reproducibility (NFR11), container isolation (NFR12), and supports Kubernetes deployment |
 | **Orchestration** | Kubernetes | 1.28.x | Container orchestration and GPU management | Enables H200 GPU job scheduling (NFR1), persistent volumes (NFR14), and resource limits; production-grade resilience |
 | **ML Library** | PyTorch | 2.8.0 | Deep learning framework | Required by DeepUnlearn and concept-erasure methods; CUDA support for H200 GPUs |
+| **Vector Database** | Qdrant | 1.7.0 (qdrant-client) | Vector storage for RAG | Local persistence with HNSW index; integrated metadata filtering; CAMEL-AI compatible; <5s retrieval (NFR8) |
 | **Embedding Model** | Sentence-Transformers | 2.2.2 | Text embeddings for RAG | Pre-trained models (all-MiniLM-L6-v2); fast local inference; avoids OpenRouter API calls for embeddings |
 | **PDF Parsing** | PyMuPDF (fitz) | 1.23.8 | Extract text from research papers | Fast, reliable PDF text extraction; required for RAG paper corpus processing (FR5) |
 | **Logging** | Python logging | 3.11 (stdlib) | Application logging | Structured logging with JSON formatting; no external dependencies; supports debugging and monitoring |

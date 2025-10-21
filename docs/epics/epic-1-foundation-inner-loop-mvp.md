@@ -1,6 +1,12 @@
 # Epic 1: Foundation & Inner Loop MVP
 
-**Expanded Goal**: Establish the foundational project infrastructure including Docker/Kubernetes setup, CAMEL-AI framework integration in dev mode, DeepUnlearn as a git submodule, and implement a complete inner research loop (Hypothesis Generator → Critic → Experiment Executor → Evaluator → Feedback) for data-based unlearning only. By the end of this epic, the system should be able to run 3-5 manual loop iterations and attempt to discover at least one vulnerability in a data-based unlearning method.
+Status: ✅ Partially Complete (1.3.1 Ready for Review; 1.4 Completed; 1.5 In Progress; 1.0 New; 1.6a New; others TBD)
+
+Expanded Goal: Establish the foundational project infrastructure including Docker/Kubernetes setup, CAMEL-AI framework integration in dev mode, concept-erasure toolkit integration (ESD baseline), strict Task Input Parser (Story 1.0), Attack Code Synthesis & Self-Repair (Story 1.6a), and implement a complete hypothesis refinement workforce with evaluation capabilities for concept-erasure unlearning methods. Note: Focus pivoted from data-based unlearning to concept-erasure (T2I) for MVP.
+
+## Story 1.0: Task Parser & Input Validation (New)
+
+See `docs/stories/1.0.task-parser-input-validation.md`.
 
 ## Story 1.1: Project Setup & Infrastructure
 
@@ -31,11 +37,9 @@ so that **we can create and modify agents as needed throughout development**.
 4. Agent prompt configuration system is implemented in `configs/` directory (YAML or JSON format)
 5. Basic agent interaction logging captures all LLM API calls and responses
 
-## Story 1.3: DeepUnlearn Integration as Git Submodule
+## Story 1.3.1: T2I Unlearning Attack Pipeline (ESD) – Ready for Review
 
-As a **developer**,
-I want **to integrate DeepUnlearn as a git submodule and wrap it as a CAMEL-AI MCP FunctionTool**,
-so that **agents can programmatically trigger unlearning and evaluation experiments**.
+See `docs/stories/1.3.1.t2i-unlearning-attack-pipeline.md`.
 
 ### Acceptance Criteria
 
@@ -45,7 +49,7 @@ so that **agents can programmatically trigger unlearning and evaluation experime
 4. Successful test execution: trigger unlearning on a simple dataset and verify evaluation metrics are returned
 5. Error handling for GPU unavailability, invalid parameters, and DeepUnlearn failures
 
-## Story 1.4: Hypothesis Generator Agent
+## Story 1.4: Concept Unlearning Evaluation Toolkit & MLLM Evaluator – Completed
 
 As a **researcher**,
 I want **a Hypothesis Generator agent that proposes stress tests for data-based unlearning methods**,
@@ -60,7 +64,7 @@ so that **the system can autonomously generate testable vulnerability hypotheses
 5. For MVP, hypothesis generation uses seed templates + basic LLM variation (no RAG yet - deferred to Epic 2)
 6. Output hypothesis is logged to `outputs/hypotheses/` with timestamp
 
-## Story 1.5: Critic Agent
+## Story 1.5: Hypothesis Refinement Workforce – In Progress
 
 As a **researcher**,
 I want **a Critic Agent that debates with the Hypothesis Generator after the first iteration**,
@@ -90,7 +94,11 @@ so that **hypotheses can be tested automatically on real unlearning methods**.
 5. Experiment results (metrics, model artifacts, logs) saved to `experiments/results/` with unique run ID
 6. Executor reports success/failure status and metrics back to loop orchestrator
 
-## Story 1.7: Evaluator with Threshold-Based Metrics
+## Story 1.6a: Attack Code Synthesis & Self-Repair (New)
+
+See `docs/stories/1.6a.attack-code-synthesis-self-repair.md`.
+
+## Story 1.7: Inner Loop Orchestrator
 
 As a **researcher**,
 I want **an Evaluator that assesses experiment results using forget accuracy thresholds**,
@@ -105,22 +113,9 @@ so that **the system can automatically detect when vulnerabilities are discovere
 5. Evaluator generates structured feedback: what worked, what failed, suggestions for next hypothesis
 6. Evaluation results logged to `outputs/evaluations/` with experiment run ID reference
 
-## Story 1.8: Inner Loop Orchestrator
+See `docs/stories/1.7.inner-loop-orchestrator.md`.
 
-As a **researcher**,
-I want **an Inner Loop Orchestrator that coordinates the research cycle**,
-so that **the system autonomously iterates until a vulnerability is discovered or max iterations reached**.
-
-### Acceptance Criteria
-
-1. Loop Orchestrator implemented in `loop/inner_loop.py`
-2. Orchestrator manages loop state: iteration count, experiment history, current hypothesis, feedback
-3. Loop flow: Hypothesis Generator → (Critic if iteration > 1) → Experiment Executor → Evaluator → check exit condition
-4. Exit conditions: VULNERABILITY_FOUND OR iteration count >= 10 (configurable in `configs/loop_config.yaml`)
-5. Loop state persisted to `outputs/loop_state.json` after each iteration (supports restart)
-6. Attack trace generation: each iteration's hypothesis, experiment parameters, results, and feedback appended to `outputs/attack_traces/trace_{run_id}.md`
-
-## Story 1.9: End-to-End Inner Loop Test
+## Story 1.8: End-to-End Inner Loop Test
 
 As a **researcher**,
 I want **to run the complete inner loop end-to-end on a data-based unlearning method**,

@@ -165,22 +165,27 @@ AUST is structured into logical components with clear responsibilities and inter
 
 ## RAG System
 
-**Responsibility:** Provides semantic search over research paper corpus (10-20 papers per domain) to retrieve relevant context for hypothesis generation.
+**Responsibility:** Provides semantic search over research paper corpus (101 paper cards from Story 2.1.1) to retrieve relevant context for hypothesis generation.
 
 **Key Interfaces:**
-- `index_papers(paper_directory: str) -> None` - Indexes PDFs into vector database
-- `search(query: str, top_k: int = 5) -> list[RetrievedPaper]` - Retrieves top-k relevant papers/chunks
-- `get_paper_metadata(paper_id: str) -> dict` - Returns citation metadata for a paper
+- `index_paper_cards(cards_directory: str) -> None` - Indexes paper cards into Qdrant vector database
+- `search(query: str, top_k: int = 5, section_filter: Optional[str] = None, task_type_filter: Optional[str] = None) -> list[SearchResult]` - Retrieves top-k relevant paper chunks with optional filters
+- `get_paper_metadata(arxiv_id: str) -> dict` - Returns citation metadata for a paper
 
 **Dependencies:**
-- FAISS vector database
-- Sentence-Transformers (all-MiniLM-L6-v2 embedding model)
-- PyMuPDF (PDF text extraction)
-- Paper Corpus (PDFs in rag/papers/)
+- Qdrant vector database (local persistence)
+- Sentence-Transformers (all-MiniLM-L6-v2 embedding model, 384-dim)
+- Paper Cards (`.paper_cards/` directory from Story 2.1.1)
 
-**Technology Stack:** Python 3.11, FAISS 1.7.4, Sentence-Transformers 2.2.2, PyMuPDF 1.23.8
+**Technology Stack:** Python 3.11, Qdrant 1.7.0, Sentence-Transformers 2.2.2
 
-**Implementation Notes:** Chunks papers into semantically coherent sections (paragraph-level with overlap). Embeds using local Sentence-Transformers model (avoids OpenRouter API calls). FAISS index loaded in-memory for < 5s retrieval (NFR8). Supports paper corpus structure: rag/papers/data_unlearning/, rag/papers/concept_erasure/, rag/papers/attack_methods/.
+**Implementation Notes:**
+- **Chunking Strategy**: Section-level chunking (Methodology, Experiments, Results, Relevance) from structured paper cards. Each chunk ~500-1000 tokens with paper title prefix for context.
+- **Embedding**: Local SentenceTransformers model (avoids OpenRouter API calls). 384-dim vectors with cosine similarity.
+- **Storage**: Qdrant with local disk persistence at `rag/vector_index/`. Metadata payloads include `{arxiv_id, section, task_type, attack_level, paper_title}` for filtered search.
+- **Performance**: HNSW index enables <5s retrieval (NFR8). Batch upsert (50 points) for efficient indexing.
+- **Integration**: Uses CAMEL-AI's `QdrantStorage` and `VectorRetriever` for consistency with framework.
+- **Estimated corpus**: ~400-500 chunks from 101 paper cards (4-5 sections per card).
 
 ## Memory System
 

@@ -91,7 +91,8 @@ so that **the system automatically generates and evaluates reports after vulnera
 2. Orchestrator triggered when inner loop exits with VULNERABILITY_FOUND or max iterations
 3. Orchestrator workflow: call Reporter → wait for report generation → call all Judges → aggregate judgments
 4. Orchestrator logs all outputs and timestamps for reproducibility
-5. Final output package saved to `outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary
+5. Default outer loop iteration budget is 5 (configurable via `configs/loop_config.yaml`); see Story 4.6
+6. Final output package saved to `outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary
 
 ## Story 4.7: End-to-End Full System Test
 

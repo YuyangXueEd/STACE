@@ -13,25 +13,48 @@
 
 ### Background Context
 
-Machine unlearning methods promise to remove specific data or concepts from trained models—critical for GDPR compliance, bias mitigation, and preventing misuse of generative AI. However, current evaluation approaches rely on static benchmarks that cannot anticipate creative, adaptive attacks from motivated adversaries. AUST (AI Scientist for Autonomous Unlearning Security Testing) addresses this gap by implementing an autonomous research system with nested inner/outer loops: the inner loop iteratively generates hypotheses, retrieves relevant research, executes experiments, and evaluates results until vulnerabilities are discovered; the outer loop generates academic reports and multi-perspective judge evaluations. This demonstrates AI conducting rigorous, end-to-end scientific research on a societally relevant privacy/compliance problem.
+Machine unlearning methods promise to remove specific data or concepts from trained models—critical for GDPR compliance, bias mitigation, and preventing misuse of generative AI. However, current evaluation approaches rely on static benchmarks that cannot anticipate creative, adaptive attacks from motivated adversaries. AUST (AI Scientist for Autonomous Unlearning Security Testing) addresses this gap by implementing an autonomous research system following a 6-step workflow:
 
-The project builds on comprehensive brainstorming and planning completed with the analyst, including detailed system architecture (critic-generator agents, RAG-based knowledge retrieval, multi-modal evaluation), aggressive 3-week implementation timeline, and clear MVP scope prioritization. AUST will run in Docker/Kubernetes with H200 GPUs, integrate DeepUnlearn as a git submodule, use CAMEL-AI in dev mode for multi-agent orchestration, and leverage OpenRouter APIs for flexible LLM/VLM access.
+**AUST 6-Step Workflow:**
+1. **Input Validation**: Parse and validate user input (model name/details + unlearned concept, optional method)
+2. **Hypothesis Generation & Critic Loop** (Story 1.5): Generate naive hypothesis from template → Critic challenges → Query Generator creates RAG queries using hypothesis+feedback → Retrieve relevant attack papers → Refine hypothesis. Run 2-round micro-loop minimum.
+3. **Attack Code Synthesis & Execution** (Story 1.6a): Translate hypothesis into executable code → Execute → If fails, analyze error and self-repair (3-5 retry budget) → Generate attack results
+4. **MLLM Evaluation** (Story 1.4): Use VLM to evaluate if attack succeeded (concept leaked from unlearned model)
+5. **Outer Loop Iteration** (default 5 times): Feed evaluation results back to Step 2 to refine hypothesis → Steps 2-4 repeat up to 5 times to improve attack quality
+6. **Report Generation & Judging** (Epic 4): After 5 outer loops, generate final report from all interactions → Multi-persona judge group evaluates → If attack successful, index as "experience" memory in RAG for future reference
+
+This demonstrates AI conducting rigorous, end-to-end scientific research on a societally relevant privacy/compliance problem.
+
+The project builds on comprehensive brainstorming and planning completed with the analyst, including detailed system architecture (critic-generator agents, RAG-based knowledge retrieval, multi-modal evaluation), aggressive 3-week implementation timeline, and clear MVP scope prioritization. AUST will run in Docker/Kubernetes with H200 GPUs, use CAMEL-AI in dev mode for multi-agent orchestration, and leverage OpenRouter APIs for flexible LLM/VLM access.
+
+**Project Pivot (October 2025)**: Initial planning focused on data-based unlearning (DeepUnlearn integration, forget accuracy metrics). During Epic 1 implementation, the project pivoted to **concept-erasure unlearning for Text-to-Image (T2I) models** as the primary research direction, with ESD (Erasing Stable Diffusion) as the baseline method. This pivot better aligns with multimodal jailbreak research opportunities and leverages CAMEL-AI's vision-language capabilities (MLLM evaluation, image analysis toolkit). Data-based unlearning remains a future extension (Epic 3 or post-MVP).
 
 ### Change Log
 
 | Date | Version | Description | Author |
 |------|---------|-------------|--------|
+| 2025-10-20 | 0.4 | Major workflow clarification: documented 6-step AUST pipeline (Input→Hypothesis+Critic+RAG→Code+Execute→Evaluate→Outer Loop×5→Report+Judge+Memory), clarified outer loop repeats steps 2-4 five times before final reporting, emphasized Query Generator role in RAG retrieval during hypothesis refinement | John (PM Agent) |
+| 2025-10-20 | 0.3 | Align with new 6-step AUST workflow: add Input Parser (Story 1.0), add Attack Code Synthesis & Self-Repair (Story 1.6a), set default outer loop to 5, index successful memories into RAG, clarify Hypothesis↔Critic↔RAG interplay | John (PM Agent) |
+| 2025-10-20 | 0.2 | Updated Epic 1 & 2 to reflect actual implementation: T2I concept-erasure focus (not data-based), Story 1.3.1/1.4/1.5 changes, Story 2.1.1/2.2 updates with Qdrant, Paper Corpus Management technical assumptions updated | John (PM Agent) |
 | 2025-10-16 | 0.1 | Initial PRD creation from Project Brief | John (PM Agent) |
 
 ## Requirements
 
 ### Functional
 
-**FR1**: The system shall implement an Inner Research Loop that iterates through Hypothesis Generation → Query Generation → RAG Retrieval → Experiment Execution → Multi-Modal Evaluation → Feedback Integration until a vulnerability is discovered or maximum iterations (10) are reached.
+**FR0 (Input Parser)**: The system shall validate user task inputs and require at least two elements: target model details and the unlearned content/concept. Example pattern: "A Stable Diffusion 1.4 model unlearned with concept Cat {with ESD method}" where braces denote optional info. Invalid inputs must return actionable errors.
+
+**FR1 (Core Workflow)**: The system shall implement the 6-step AUST workflow:
+1. Input validation (FR0)
+2. Hypothesis Generation & Critic with RAG retrieval (FR2, FR3, FR4, FR5) - minimum 2-round micro-loop
+3. Attack Code Synthesis & Execution with self-repair (FR7a) - 3-5 retry budget
+4. MLLM Evaluation (FR9)
+5. Outer loop: repeat steps 2-4 for 5 iterations with evaluation feedback (FR15)
+6. Report generation, judging, and memory indexing (FR12, FR13, FR10)
 
 **FR2**: The system shall provide a Hypothesis Generator agent that proposes targeted stress tests for unlearning methods based on retrieved papers and past experiment results.
 
-**FR3**: The system shall provide a Critic Agent that debates with the Hypothesis Generator after the first iteration to challenge and improve hypothesis quality.
+**FR3**: The system shall provide a Critic Agent that debates with the Hypothesis Generator after the first iteration to challenge and improve hypothesis quality. The critic shall drive RAG query generation based on the current hypothesis and evaluator feedback; the hypothesis–critic module shall run a two-round micro-loop per iteration.
 
 **FR4**: The system shall provide a Query Generator agent that converts evaluation feedback and hypothesis needs into RAG search queries.
 
@@ -40,12 +63,13 @@ The project builds on comprehensive brainstorming and planning completed with th
 **FR6**: The system shall provide an Experiment Executor that integrates DeepUnlearn (via git submodule as MCP FunctionTool) for data-based unlearning experiments.
 
 **FR7**: The system shall provide an Experiment Executor that integrates concept-erasure methods from GitHub repositories (as MCP FunctionTools or submodules) for concept-based unlearning experiments.
+**FR7a (Code Synthesis & Self-Repair)**: The system shall include an Attack Code Synthesis agent that generates executable attack code from hypotheses and retries with targeted self-repair upon execution failures (3–5 attempts).
 
 **FR8**: The system shall provide an Evaluator that uses threshold-based metrics (forget accuracy) for data-based unlearning vulnerability detection.
 
 **FR9**: The system shall provide an Evaluator that uses VLM-based analysis (generation-based leakage detection) for concept-erasure vulnerability detection.
 
-**FR10**: The system shall implement a Memory System using CAMEL-AI long-term storage to capture successful vulnerability discoveries for future reference.
+**FR10**: The system shall implement a Memory System using CAMEL-AI long-term storage to capture successful vulnerability discoveries for future reference. Successful attacks shall be indexed into the RAG as "experience" chunks for future retrieval.
 
 **FR11**: The system shall generate Attack Traces documenting step-by-step records of the inner research loop showing hypothesis evolution and vulnerability discovery paths.
 
@@ -55,7 +79,12 @@ The project builds on comprehensive brainstorming and planning completed with th
 
 **FR14**: The system shall support both data-based unlearning and concept-erasure tasks using unified workflow with prompt-based task differentiation.
 
-**FR15**: The system shall exit the inner research loop when either a vulnerability is discovered OR maximum iterations are reached, then proceed to the outer loop (Reporter → Judges).
+**FR15 (Outer Loop Orchestration)**: The system shall implement a 5-iteration outer loop that repeats Steps 2-4 of the workflow:
+- **Step 2**: Hypothesis Generation & Critic Loop with RAG-based paper retrieval
+- **Step 3**: Attack Code Synthesis & Execution with self-repair
+- **Step 4**: MLLM Evaluation feeding results back to next iteration
+
+After 5 outer loop iterations complete, proceed to **Step 6** (Report Generation with all interaction history → Multi-Persona Judging → Memory Indexing if successful).
 
 ### Non Functional
 
@@ -117,7 +146,8 @@ The AUST project will use a monorepo structure at https://github.com/vios-s/CAUS
 
 - **GPU Resource Management**: H200 GPUs are available via Kubernetes job scheduling. Experiment execution should handle job queue delays gracefully (timeout/retry logic).
 
-- **Paper Corpus Management**: 10-20 papers per task domain (data-based unlearning, concept-erasure, shared attack methods) stored as PDFs or text. RAG system uses FAISS or Chroma for vector database with embedding model (OpenRouter or Sentence-Transformers).
+- **Paper Corpus Management**: 101 paper cards (structured markdown with Methodology, Experiments, Results sections) generated in Story 2.1.1 from collected PDFs. RAG system uses **Qdrant** for vector database with **SentenceTransformers** (all-MiniLM-L6-v2, 384-dim) for local embeddings. Section-level chunking (~400-500 chunks) with metadata filtering (section type, task type, attack level). Decision rationale: Vector RAG (not GraphRAG) meets MVP timeline and semantic search requirements; Qdrant chosen for integrated metadata storage, local persistence, CAMEL-AI compatibility, and <5s retrieval (NFR8).
+ - **Paper Corpus Management**: 101 paper cards (structured markdown with Methodology, Experiments, Results sections) generated in Story 2.1.1 from collected PDFs. RAG system uses **Qdrant** for vector database with **SentenceTransformers** (all-MiniLM-L6-v2, 384-dim) for local embeddings. Section-level chunking (~400-500 chunks) with metadata filtering (section type, task type, attack level). Decision rationale: Vector RAG (not GraphRAG) meets MVP timeline and semantic search requirements; Qdrant chosen for integrated metadata storage, local persistence, CAMEL-AI compatibility, and <5s retrieval (NFR8). In addition to papers, successful memories are indexed as an "experience" section for retrieval.
 
 - **Agent Prompting Strategy**: Agents use prompt-based task differentiation for data-based vs concept-erasure workflows. Prompts stored in `configs/` directory for easy iteration and versioning.
 
@@ -136,20 +166,45 @@ The AUST project will use a monorepo structure at https://github.com/vios-s/CAUS
 ## Epic List
 
 ### Epic 1: Foundation & Inner Loop MVP (Week 1: Oct 24-30)
-**Goal**: Establish project infrastructure, CAMEL-AI integration, DeepUnlearn integration, and implement a complete inner research loop for data-based unlearning only.
+**Goal**: Establish project infrastructure, CAMEL-AI integration, concept-erasure integration (ESD baseline), Input Parser (Step 1), and Attack Code Synthesis with self-repair (Step 3); implement complete inner research loop components for concept-erasure focus.
 
 ### Epic 2: RAG System & Knowledge Integration (Week 2: Oct 31-Nov 6, Part 1)
-**Goal**: Add RAG-based paper retrieval with query generation, integrate CAMEL-AI long-term memory, and enhance hypothesis generation with literature-based knowledge.
+**Goal**: Implement Hypothesis Generation & Critic Loop with RAG-based paper retrieval (Step 2), integrate Query Generator for literature search, and add CAMEL-AI long-term memory for experience indexing.
 
 ### Epic 3: Concept-Erasure Task & Multi-Modal Evaluation (Week 2: Oct 31-Nov 6, Part 2)
-**Goal**: Extend system to support concept-erasure unlearning methods with VLM-based evaluation, demonstrating generality across both unlearning paradigms.
+**Goal**: Implement MLLM-based evaluation for concept leakage detection (Step 4), enabling automated assessment of attack success for concept-erasure unlearning methods.
 
 ### Epic 4: Outer Loop & Multi-Perspective Judging (Week 3: Nov 7-13)
-**Goal**: Implement reporter agent for academic paper generation and multi-perspective LLM judges, completing the end-to-end autonomous research workflow.
+**Goal**: Implement 5-iteration outer loop orchestration (Step 5) and final report generation with multi-perspective judge evaluation and memory indexing (Step 6), completing the end-to-end autonomous research workflow.
 
 ## Epic 1: Foundation & Inner Loop MVP
 
-**Expanded Goal**: Establish the foundational project infrastructure including Docker/Kubernetes setup, CAMEL-AI framework integration in dev mode, DeepUnlearn as a git submodule, and implement a complete inner research loop (Hypothesis Generator → Critic → Experiment Executor → Evaluator → Feedback) for data-based unlearning only. By the end of this epic, the system should be able to run 3-5 manual loop iterations and attempt to discover at least one vulnerability in a data-based unlearning method.
+**Status**: ✅ Partially Complete (Stories 1.3.1 Ready for Review; 1.4 Completed; 1.5 In Progress; 1.0 New; 1.6a New; 1.1-1.2, 1.6-1.8 TBD)
+
+**Expanded Goal**: Establish the foundational project infrastructure including Docker/Kubernetes setup, CAMEL-AI framework integration in dev mode, concept-erasure toolkits (ESD unlearning), strict Task Input Parser (**Step 1: Input Validation**), and attack code synthesis with self-repair (**Step 3: Code Synthesis & Execution**). Implement a complete hypothesis refinement workforce with evaluation capabilities for concept-erasure unlearning methods. **Note**: Focus shifted from data-based unlearning (DeepUnlearn) to concept-erasure unlearning (T2I models) based on project pivot.
+
+**Key Changes from Original Plan:**
+- **Story 1.3** replaced by **Story 1.3.1** (T2I Unlearning Attack Pipeline with ESD integration) ✅ Ready for Review
+- **Story 1.4** updated to MLLM Unlearning Toolkit & Evaluator ✅ Completed
+- **Story 1.5** expanded from simple Critic Agent to Hypothesis Refinement Workforce (Draft; includes Query Generator integration during debate)
+- **Story 1.0 (New)** Input Parser & Task Validation
+- **Story 1.6a (New)** Attack Code Synthesis & Self-Repair Loop
+- Stories 1.1-1.2, 1.6-1.8 remain in backlog (infrastructure, orchestrator)
+### Story 1.0: Task Parser & Input Validation (New)
+
+As a developer,
+I want to validate and parse user inputs into a structured TaskSpec,
+so that the system only runs when at least the model details and the unlearned concept/content are specified.
+
+#### Acceptance Criteria
+
+1. Input Parser implemented in `loop/task_parser.py` with Pydantic TaskSpec model
+2. Accepts natural language prompt and extracts: model_name/version, unlearning_target (concept/content), optional method info
+3. Validates required fields and returns actionable errors on failure
+4. Parses example pattern: "A Stable Diffusion 1.4 model unlearned with concept Cat {with ESD method}"
+5. Emits normalized TaskSpec JSON into `outputs/{task_id}/task_spec.json`
+6. Integrated pre-check in Inner Loop Orchestrator; loop does not start if validation fails
+
 
 ### Story 1.1: Project Setup & Infrastructure
 
@@ -180,49 +235,72 @@ so that **we can create and modify agents as needed throughout development**.
 4. Agent prompt configuration system is implemented in `configs/` directory (YAML or JSON format)
 5. Basic agent interaction logging captures all LLM API calls and responses
 
-### Story 1.3: DeepUnlearn Integration as Git Submodule
+### Story 1.3.1: T2I Unlearning Attack Pipeline ✅ Ready for Review
 
-As a **developer**,
-I want **to integrate DeepUnlearn as a git submodule and wrap it as a CAMEL-AI MCP FunctionTool**,
-so that **agents can programmatically trigger unlearning and evaluation experiments**.
-
-#### Acceptance Criteria
-
-1. DeepUnlearn repository is added as git submodule in `submodules/DeepUnlearn/`
-2. DeepUnlearn dependencies are integrated into requirements.txt without conflicts
-3. MCP FunctionTool wrapper in `tools/deepunlearn_tool.py` exposes at minimum: `unlearn_model(method, dataset, params)` and `evaluate_model(model, metrics)`
-4. Successful test execution: trigger unlearning on a simple dataset and verify evaluation metrics are returned
-5. Error handling for GPU unavailability, invalid parameters, and DeepUnlearn failures
-
-### Story 1.4: Hypothesis Generator Agent
+**Note**: This story replaces original Story 1.3 (DeepUnlearn Integration). Project pivoted to concept-erasure unlearning for T2I models instead of data-based unlearning.
 
 As a **researcher**,
-I want **a Hypothesis Generator agent that proposes stress tests for data-based unlearning methods**,
-so that **the system can autonomously generate testable vulnerability hypotheses**.
+I want **to integrate ESD unlearning method as an MCP toolkit and create an agent to orchestrate concept erasure across multiple T2I models**,
+so that **I can programmatically erase concepts from text-to-image models (Stable Diffusion, SDXL, Flux) via natural language prompts**.
 
 #### Acceptance Criteria
 
-1. Hypothesis Generator agent implemented in `agents/hypothesis_generator.py`
-2. Agent accepts context inputs: task type (data-based), past experiment results (empty for first iteration), feedback from evaluator
-3. Agent generates hypothesis in structured format: attack method, target unlearning method, experiment parameters, expected outcome
-4. Seed templates (3-5 known attack patterns: membership inference, model inversion, data extraction) are pre-loaded in `configs/seed_hypotheses.yaml`
-5. For MVP, hypothesis generation uses seed templates + basic LLM variation (no RAG yet - deferred to Epic 2)
-6. Output hypothesis is logged to `outputs/hypotheses/` with timestamp
+1. ESD repository cloned to `external/esd/` (from official GitHub repository)
+2. ConceptUnlearnToolkit in `aust/src/toolkits/concept_unlearn_toolkit.py` wraps ESD as MCP toolkit with FunctionTools supporting multiple T2I models
+3. Support for T2I models: Stable Diffusion (default), Stable Diffusion XL (SDXL), and Flux
+4. ConceptUnlearnAgent in `aust/src/agents/concept_unlearn_agent.py` receives prompts like "using {unlearning_method} to erase {concept} [from {model}] [with {method_variant}]" and triggers appropriate tool calls
+5. Support for ESD method with optional method variants (e.g., 'xattn', 'noxattn', 'full')
+6. Default parameters when model/variant not specified in prompt (model: Stable Diffusion, variant: 'xattn' for ESD)
+7. Model-specific configuration and checkpoint management (`data/unlearned_models/esd/{model}/{concept}/`)
+8. Toolkit designed to be extensible for future unlearning methods (SalUn, Receler, etc.) and T2I models
 
-### Story 1.5: Critic Agent
+**See**: [docs/stories/1.3.1.t2i-unlearning-attack-pipeline.md](docs/stories/1.3.1.t2i-unlearning-attack-pipeline.md)
+
+### Story 1.4: Concept Unlearning Evaluation Toolkit & MLLM Evaluator Agent ✅ Completed
+
+**Note**: This story was updated from original "Hypothesis Generator Agent" to focus on evaluation capabilities for concept-erasure unlearning.
 
 As a **researcher**,
-I want **a Critic Agent that debates with the Hypothesis Generator after the first iteration**,
-so that **hypothesis quality improves through adversarial questioning**.
+I want **a comprehensive evaluation toolkit with metrics from Awesome-Multimodal-Jailbreak and an MLLM-powered evaluator agent**,
+so that **I can systematically assess whether concepts have been successfully unlearned from text-to-image models and evaluate their robustness against jailbreak attacks**.
 
 #### Acceptance Criteria
 
-1. Critic Agent implemented in `agents/critic.py`
-2. Critic activates after first inner loop iteration (when feedback is available)
-3. Critic challenges hypothesis on: novelty (is this just repeating seed templates?), feasibility (can this be executed?), rigor (is the expected outcome testable?)
-4. Critic provides structured feedback to Hypothesis Generator: strengths, weaknesses, suggestions for improvement
-5. Hypothesis Generator incorporates critic feedback in next iteration
-6. Debate exchange (Hypothesis → Critic → Revised Hypothesis) is logged to `outputs/debates/`
+1. ConceptUnlearnEvaluationToolkit in `aust/src/toolkits/concept_unlearn_evaluation_toolkit.py` implements evaluation metrics from Awesome-Multimodal-Jailbreak repository
+2. Robustness metrics: Attack Success Rate (ASR), concept leakage detection (CLIP-based, detector-based)
+3. Utility metrics: FID (Frechet Inception Distance), CLIP Score, Prompt Perplexity
+4. MLLM assessment using Large Vision Language models to recognize whether the concept is leaked
+5. Integration with `camel.toolkits.ImageAnalysisToolkit` for image-based analysis
+6. Evaluator agent in `aust/src/agents/mllm_evaluator.py` orchestrates evaluation workflow
+7. Evaluation script `aust/scripts/run_mllm_evaluation.py` provides CLI for evaluating unlearned models
+
+**See**: [docs/stories/1.4.mllm-unlearning-toolkit-evaluator.md](docs/stories/1.4.mllm-unlearning-toolkit-evaluator.md)
+
+### Story 1.5: Hypothesis Refinement Workforce (Draft, In Progress)
+
+**Note**: This story expanded from original "Critic Agent" to a full workforce pattern with iterative debate and Chain-of-Thought reasoning.
+
+As a **researcher**,
+I want **a collaborative Hypothesis Refinement Workforce that uses iterative debate between a Hypothesis Generator and Critic agent with self-improving Chain-of-Thought reasoning**,
+so that **the system autonomously generates high-quality, testable vulnerability hypotheses through structured adversarial refinement**.
+
+#### Acceptance Criteria
+
+1. Hypothesis Refinement Workforce implemented as a cohesive module in `agents/hypothesis_workforce.py`
+2. Workforce uses CAMEL-AI Workforce pattern to coordinate Hypothesis Generator and Critic agents
+3. Workforce implements 2-round debate cycle with self-improving CoT reasoning
+4. Hypothesis Generator accepts context inputs: task type, past experiment results, evaluator feedback, retrieved papers chunks from RAG
+5. Critic triggers the Query Generator to produce 1–3 RAG queries based on current hypothesis; retrieved chunks are fed into refinement
+6. In the first round, the generator uses seed templates (3-5 known attack patterns) with LLM-based variation
+6. Hypothesis data model with structured format: attack method, target, experiment parameters, expected outcome, confidence score, novelty score, reasoning trace
+7. Critic Agent challenges hypotheses on novelty, feasibility, and rigor dimensions
+8. Critic provides structured feedback: strengths, weaknesses, specific suggestions for improvement
+9. Hypothesis Generator incorporates critic feedback using CoT reasoning
+10. Workforce activates after first inner loop iteration (when feedback from evaluator is available)
+11. Full debate exchange logged to `outputs/{task_id}/debates/iteration_{n}.json`
+12. Final hypothesis from workforce integrates with existing Inner Loop Orchestrator state machine
+
+**See**: [docs/stories/1.5.hypothesis-refinement-workforce.md](docs/stories/1.5.hypothesis-refinement-workforce.md)
 
 ### Story 1.6: Experiment Executor for Data-Based Unlearning
 
@@ -270,6 +348,20 @@ so that **the system autonomously iterates until a vulnerability is discovered o
 6. Attack trace generation: each iteration's hypothesis, experiment parameters, results, and feedback appended to `outputs/attack_traces/trace_{run_id}.md`
 
 ### Story 1.9: End-to-End Inner Loop Test
+### Story 1.6a: Attack Code Synthesis & Self-Repair Loop (New)
+
+As a researcher,
+I want an agent that translates hypotheses into executable attack code/scripts and automatically repairs code on failures,
+so that failed executions are retried up to 3–5 times before giving up.
+
+#### Acceptance Criteria
+
+1. Code Synthesis agent implemented in `agents/code_synthesizer.py` with prompts tailored for our toolkits and environment
+2. Execution runner integrated with sandboxed subprocess and timeouts; logs captured to `outputs/{task_id}/runs/{run_id}/`
+3. On failure (non-zero exit, exception), the agent inspects error logs and regenerates code with targeted fixes; retry budget configurable (3–5)
+4. Success/failure with artifacts and logs reported back to Inner Loop Orchestrator
+5. Works for both concept-erasure attack scripts and data-based DeepUnlearn wrappers
+
 
 As a **researcher**,
 I want **to run the complete inner loop end-to-end on a data-based unlearning method**,
@@ -286,50 +378,89 @@ so that **we validate the MVP can discover at least one vulnerability**.
 
 ## Epic 2: RAG System & Knowledge Integration
 
-**Expanded Goal**: Add RAG-based paper retrieval with query generation to enhance hypothesis quality through literature-based knowledge. Integrate CAMEL-AI long-term memory to store successful vulnerability discoveries for future reference. By the end of this epic, hypothesis generation should leverage relevant research papers and past successes, significantly improving the quality and novelty of proposed stress tests.
+**Status**: ✅ Partially Complete (Story 2.1.1 done; Story 2.2 ready for implementation; 2.3-2.5 TBD)
 
-### Story 2.1: Paper Corpus Collection & Storage
+**Expanded Goal**: Implement Hypothesis Generation & Critic Loop with RAG-based paper retrieval (**Step 2**) to enhance hypothesis quality through literature-based knowledge. Integrate Query Generator for transforming hypothesis+feedback into search queries. Add CAMEL-AI long-term memory to store successful vulnerability discoveries (**Step 6** memory indexing) for future reference. By the end of this epic, hypothesis generation should leverage relevant research papers and past successes, significantly improving the quality and novelty of proposed stress tests.
+
+**Key Changes from Original Plan:**
+- **Story 2.1** replaced by **Story 2.1.1** (Paper Card Generation for RAG System) ✅ Completed - 101 papers processed into structured markdown cards
+- **Story 2.2** updated to use **Qdrant** (not FAISS/Chroma) with SentenceTransformers for local embeddings ⏳ Ready for Implementation
+- Successful memories from Story 2.5 will be indexed into Qdrant as "experience" chunks
+
+### Story 2.1.1: Paper Card Generation for RAG System ✅ Completed
+
+**Note**: This story replaces original Story 2.1 (Paper Corpus Collection & Storage). Instead of storing raw PDFs, we generate AI-extracted structured paper cards for better RAG retrieval.
 
 As a **researcher**,
-I want **to collect and store 10-20 key papers per task domain in an accessible format**,
-so that **the RAG system has a knowledge base to retrieve from**.
+I want **an AI agent to generate structured paper cards from collected PDFs that extract key information (methodology, experiments, results, GitHub links) for RAG retrieval**,
+so that **the hypothesis generation agent can efficiently retrieve relevant research insights without processing messy unstructured PDFs**.
 
 #### Acceptance Criteria
 
-1. Paper corpus directory created: `rag/papers/data_based/`, `rag/papers/concept_erasure/`, `rag/papers/attack_methods/`
-2. Minimum 10 papers collected per directory (PDFs or text files) covering relevant research: data-based unlearning (SISA, machine unlearning), concept-erasure (EraseDiff, concept ablation), attack methods (membership inference, model inversion)
-3. Paper metadata file `rag/paper_metadata.json` contains: title, authors, venue, year, file path, summary for each paper
-4. PDF parsing utility in `rag/pdf_parser.py` extracts text from PDFs (using PyMuPDF or pdfplumber)
-5. Extracted paper text stored in `rag/papers_text/` for faster retrieval
+1. Paper card markdown template created in `.paper_cards/TEMPLATE.md` with sections: Metadata, Quick Summary, Research Problem, Methodology, Experiment Design, Key Results Summary, Implementation Details, Relevance to Our Work, Key Quotes, Related Work Mentioned, Citation
+2. Template includes metadata fields: generation_date, agent_model for traceability
+3. Paper Card Agent implemented in `agents/paper_card_agent.py` extending CAMEL-AI ChatAgent
+4. Agent uses LLM (gpt-5-nano via OpenRouter) to extract structured information from PDFs
+5. Agent prompt configuration in `configs/prompts/paper_card_extraction.yaml`
+6. Agent handles PDF processing edge cases (figures, tables, references)
+7. Batch processing script `scripts/generate_paper_cards.py` generates cards for all 101 papers
+8. Paper card metadata file `.paper_cards/card_metadata.json` tracks generation status
+9. Error handling and logging for failed extractions
+10. Paper cards designed for RAG chunking: each section (Methodology, Experiments, Results) can be embedded separately
 
-### Story 2.2: Vector Database & Embedding System
+**Achievements:**
+- ✅ 101 paper cards generated in `.paper_cards/` directory
+- ✅ Organized by taxonomy: `any-to-t/` and `any-to-v/` with subdirectories by attack level
+- ✅ Structured markdown format ready for section-based chunking in Story 2.2
+
+**See**: [docs/stories/2.1.1.paper-corpus-collection-storage.md](docs/stories/2.1.1.paper-corpus-collection-storage.md)
+
+### Story 2.2: Vector Database & Embedding System ⏳ Ready for Implementation
+
+**Note**: Updated to use **Qdrant** vector database with local SentenceTransformers embeddings (not OpenRouter).
 
 As a **developer**,
-I want **to set up a vector database with embeddings for semantic search over papers**,
-so that **agents can retrieve relevant research based on query similarity**.
+I want **to set up a Qdrant vector database with local embeddings for semantic search over paper cards**,
+so that **agents can retrieve relevant research based on query similarity to support hypothesis generation**.
 
 #### Acceptance Criteria
 
-1. Vector database implemented using FAISS or Chroma in `rag/vector_db.py`
-2. Embedding model integrated (OpenRouter embeddings or Sentence-Transformers)
-3. All paper text chunked (by paragraph or section) and embedded with unique IDs
-4. Vector index built and persisted to `rag/vector_index/` for fast loading
-5. Query interface: `search(query_text, top_k=5)` returns top-k most relevant paper chunks with metadata
-6. Search latency < 5 seconds per query (NFR8)
+1. Qdrant collection created with collection name `"aust_papers"`, 384-dim vectors (all-MiniLM-L6-v2), local disk persistence at `rag/vector_index/`
+2. Paper card chunking by semantic sections: Methodology, Experiments, Results, Relevance (~400-500 chunks from 101 cards)
+3. Each chunk includes paper title prefix and metadata payload: arxiv_id, section, task_type, attack_level, paper_title, card_path
+4. Index building script `scripts/build_vector_index.py` processes all paper cards with progress logging
+5. PaperRAG query interface: `search(query, top_k=5, section_filter, task_type_filter)` with Qdrant filtering DSL
+6. Search performance: < 5 seconds per query, < 10 seconds for 3-query batch (NFR8)
+7. Story 2.3 integration ready: PaperRAG class importable from `aust.rag.vector_db`
 
-### Story 2.3: Query Generator Agent
+**Technical Decisions:**
+- **Vector RAG** (not GraphRAG) - meets MVP timeline and semantic search requirements
+- **Qdrant** chosen for integrated metadata storage, local persistence, CAMEL-AI compatibility
+- **Section-level chunking** - leverages structured paper cards from Story 2.1.1
+
+**See**: [docs/stories/2.2.vector-database-embedding-system.md](docs/stories/2.2.vector-database-embedding-system.md)
+
+### Story 2.3: Query Generator Agent (TBD)
 
 As a **researcher**,
 I want **a Query Generator agent that converts evaluation feedback and hypothesis needs into RAG search queries**,
-so that **the system retrieves relevant papers automatically**.
+so that **the system retrieves relevant papers automatically from the Qdrant-based RAG system**.
 
 #### Acceptance Criteria
 
 1. Query Generator agent implemented in `agents/query_generator.py`
-2. Agent accepts inputs: current hypothesis (if any), evaluation feedback, task type (data-based or concept-erasure)
+2. Agent accepts inputs: current hypothesis (if any), evaluation feedback, task type (concept-erasure or data-based), iteration number
 3. Agent generates 1-3 search queries focusing on: attack methods, unlearning vulnerabilities, relevant evaluation metrics
-4. Queries are logged to `outputs/queries/` with timestamp
-5. Query Generator calls RAG search interface and returns top-5 relevant paper chunks per query
+4. Queries are logged to `outputs/{task_id}/queries/iteration_{n}.json` with timestamp
+5. Query Generator calls `PaperRAG.search()` interface from Story 2.2:
+   - Uses section filtering (e.g., `section_filter="METHODOLOGY"` for attack methods)
+   - Uses task type filtering (e.g., `task_type_filter="any-to-t"` for T2I papers)
+   - Returns top-5 relevant paper chunks per query (15 chunks total for 3 queries)
+6. Integration with Hypothesis Refinement Workforce (Story 1.5): retrieved papers passed as context
+
+**Dependencies:**
+- Story 2.2 (PaperRAG interface) must be completed first
+- Story 1.5 (Hypothesis Workforce) integration point
 
 ### Story 2.4: Enhance Hypothesis Generator with RAG
 
@@ -358,6 +489,7 @@ so that **the system learns from past successes across multiple runs**.
 3. Memory retrieval interface: `get_successful_attacks(task_type)` returns past successful attacks for given task
 4. Hypothesis Generator queries memory at start of each run to inform initial hypothesis generation
 5. Memory persisted to `outputs/memory_store/` (survives container restarts per NFR14)
+6. Successful memories are exported to the Qdrant collection `aust_papers` with section="experience" for PaperRAG retrieval
 
 ### Story 2.6: RAG-Enhanced End-to-End Test
 
@@ -376,7 +508,7 @@ so that **we validate that knowledge integration improves hypothesis quality**.
 
 ## Epic 3: Concept-Erasure Task & Multi-Modal Evaluation
 
-**Expanded Goal**: Extend the system to support concept-erasure unlearning methods from GitHub repositories with VLM-based evaluation for generation-based leakage detection. Adapt prompts and agents for concept-erasure domain while maintaining unified workflow architecture. By the end of this epic, AUST should successfully run the inner loop on both data-based and concept-erasure tasks, demonstrating generality across unlearning paradigms.
+**Expanded Goal**: Implement MLLM-based evaluation for concept leakage detection (**Step 4: MLLM Evaluation**). Extend the system to support concept-erasure unlearning methods from GitHub repositories with VLM-based evaluation for generation-based leakage detection. Adapt prompts and agents for concept-erasure domain while maintaining unified workflow architecture. By the end of this epic, AUST should successfully run the complete inner loop (Steps 2-4) on concept-erasure tasks.
 
 ### Story 3.1: Concept-Erasure Method Integration
 
@@ -466,7 +598,7 @@ so that **we validate the system works for both unlearning paradigms**.
 
 ## Epic 4: Outer Loop & Multi-Perspective Judging
 
-**Expanded Goal**: Implement the Reporter agent that generates academic-format papers (Introduction, Methods, Experiments, Results, Discussion, Conclusion) with citation integration, and the multi-perspective LLM Judge system with 3-5 personas evaluating findings from different angles. By the end of this epic, AUST completes the full end-to-end autonomous research workflow, generating publishable reports with multi-faceted evaluation.
+**Expanded Goal**: Implement 5-iteration outer loop orchestration (**Step 5**) that feeds evaluation results back to refine hypothesis generation (Steps 2-4). After outer loop completes, implement final report generation, multi-perspective LLM Judge system with 3-5 personas, and memory indexing for successful attacks (**Step 6**). By the end of this epic, AUST completes the full end-to-end autonomous research workflow (all 6 steps), generating publishable reports with multi-faceted evaluation and learning from successes.
 
 ### Story 4.1: Reporter Agent - Report Structure & Template
 
@@ -557,7 +689,8 @@ so that **the system automatically generates and evaluates reports after vulnera
 2. Orchestrator triggered when inner loop exits with VULNERABILITY_FOUND or max iterations
 3. Orchestrator workflow: call Reporter → wait for report generation → call all Judges → aggregate judgments
 4. Orchestrator logs all outputs and timestamps for reproducibility
-5. Final output package saved to `outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary
+5. Default outer loop iteration budget is 5; configurable via `configs/loop_config.yaml`
+6. Final output package saved to `outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary
 
 ### Story 4.7: End-to-End Full System Test
 

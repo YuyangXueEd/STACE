@@ -1,34 +1,24 @@
 # Epic 2: RAG System & Knowledge Integration
 
-**Expanded Goal**: Add RAG-based paper retrieval with query generation to enhance hypothesis quality through literature-based knowledge. Integrate CAMEL-AI long-term memory to store successful vulnerability discoveries for future reference. By the end of this epic, hypothesis generation should leverage relevant research papers and past successes, significantly improving the quality and novelty of proposed stress tests.
+Expanded Goal: Add RAG-based paper retrieval with query generation to enhance hypothesis quality through literature-based knowledge. Integrate CAMEL-AI long-term memory to store successful vulnerability discoveries for future reference. By the end of this epic, hypothesis generation should leverage relevant research papers and past successes, significantly improving the quality and novelty of proposed stress tests.
 
-## Story 2.1: Paper Corpus Collection & Storage
+Status: ✅ Partially Complete (2.1.1 Completed; 2.2 Ready for Implementation; 2.3-2.6 TBD)
 
-As a **researcher**,
-I want **to collect and store 10-20 key papers per task domain in an accessible format**,
-so that **the RAG system has a knowledge base to retrieve from**.
+## Story 2.1.1: Paper Card Generation for RAG System – Completed
 
-### Acceptance Criteria
+See `docs/stories/2.1.1.paper-corpus-collection-storage.md`.
 
-1. Paper corpus directory created: `rag/papers/data_based/`, `rag/papers/concept_erasure/`, `rag/papers/attack_methods/`
-2. Minimum 10 papers collected per directory (PDFs or text files) covering relevant research: data-based unlearning (SISA, machine unlearning), concept-erasure (EraseDiff, concept ablation), attack methods (membership inference, model inversion)
-3. Paper metadata file `rag/paper_metadata.json` contains: title, authors, venue, year, file path, summary for each paper
-4. PDF parsing utility in `rag/pdf_parser.py` extracts text from PDFs (using PyMuPDF or pdfplumber)
-5. Extracted paper text stored in `rag/papers_text/` for faster retrieval
+## Story 2.2: Vector Database & Embedding System – Ready for Implementation
 
-## Story 2.2: Vector Database & Embedding System
-
-As a **developer**,
-I want **to set up a vector database with embeddings for semantic search over papers**,
-so that **agents can retrieve relevant research based on query similarity**.
+See `docs/stories/2.2.vector-database-embedding-system.md` (Qdrant + SentenceTransformers; section-level chunking of paper cards).
 
 ### Acceptance Criteria
 
-1. Vector database implemented using FAISS or Chroma in `rag/vector_db.py`
-2. Embedding model integrated (OpenRouter embeddings or Sentence-Transformers)
-3. All paper text chunked (by paragraph or section) and embedded with unique IDs
-4. Vector index built and persisted to `rag/vector_index/` for fast loading
-5. Query interface: `search(query_text, top_k=5)` returns top-k most relevant paper chunks with metadata
+1. Vector database implemented using Qdrant in `rag/vector_db.py`
+2. Embedding model integrated using Sentence-Transformers (all-MiniLM-L6-v2)
+3. Paper cards chunked by section (Methodology, Experiments, Results, Relevance) with metadata payloads
+4. Vector index persisted to `rag/vector_index/` (local collection)
+5. Query interface: `search(query_text, top_k=5, filters)` returns top-k relevant chunks with metadata
 6. Search latency < 5 seconds per query (NFR8)
 
 ## Story 2.3: Query Generator Agent
@@ -72,6 +62,7 @@ so that **the system learns from past successes across multiple runs**.
 3. Memory retrieval interface: `get_successful_attacks(task_type)` returns past successful attacks for given task
 4. Hypothesis Generator queries memory at start of each run to inform initial hypothesis generation
 5. Memory persisted to `outputs/memory_store/` (survives container restarts per NFR14)
+6. Successful memories are exported into the Qdrant collection as section="experience" for future retrieval
 
 ## Story 2.6: RAG-Enhanced End-to-End Test
 

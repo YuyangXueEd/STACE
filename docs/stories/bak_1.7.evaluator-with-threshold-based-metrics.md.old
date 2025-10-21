@@ -1,4 +1,4 @@
-# Story 4.6: Outer Loop Orchestrator
+# Story 1.7: Evaluator with Threshold-Based Metrics
 
 ## Status
 
@@ -7,38 +7,31 @@ Draft
 ## Story
 
 **As a** researcher,
-**I want** an Outer Loop Orchestrator that implements the 5-iteration outer loop (Step 5) and subsequent report generation with judging and memory indexing (Step 6),
-**so that** the system iteratively refines attack hypotheses through 5 iterations of Steps 2-4, then generates a final report evaluated by multi-perspective judges and indexes successful attacks as experience memory.
+**I want** an Evaluator that assesses experiment results using forget accuracy thresholds,
+**so that** the system can automatically detect when vulnerabilities are discovered.
 
 ## Acceptance Criteria
 
-1. Outer Loop Orchestrator implemented in `loop/outer_loop.py` with two distinct phases:
-   - **Phase 1 (Step 5)**: Execute 5 iterations of Steps 2-4 (Hypothesis Generation & Critic → Code Synthesis & Execution → MLLM Evaluation)
-   - **Phase 2 (Step 6)**: After 5 iterations complete, generate final report → multi-perspective judging → memory indexing
-2. **Step 5 Implementation**: Orchestrator repeats Steps 2-4 for 5 iterations:
-   - Feed evaluation results from Step 4 back to Step 2 as context for next iteration
-   - Track hypothesis evolution and improvement across iterations
-   - Log all intermediate results (hypotheses, code, evaluations) for final report
-3. **Step 6 Implementation**: After 5 outer loop iterations complete:
-   - Call Reporter Agent to generate academic paper from all 5 iterations' interaction history
-   - Call all Judge Agents (3-5 personas) to evaluate report quality
-   - If attack successful: index hypothesis + attack results as "experience" in RAG (CAMEL-AI long-term memory)
-   - Aggregate judge evaluations and save final output package
-4. Orchestrator logs all outputs and timestamps for reproducibility (each iteration and final report)
-5. Outer loop iteration budget hardcoded to 5 (not configurable for MVP consistency)
-6. Final output package saved to `outputs/final_{run_id}/` containing: report, attack traces from all 5 iterations (JSON + MD), all judge evaluations, aggregated summary, memory indexing confirmation
+1. Evaluator implemented in `agents/evaluator.py` for data-based unlearning
+2. Evaluator computes forget accuracy from experiment results using DeepUnlearn's evaluation functions
+3. Configurable threshold in `configs/evaluation_thresholds.yaml` (e.g., forget accuracy delta > 10%)
+4. Evaluator determines: VULNERABILITY_FOUND, INCONCLUSIVE, or NO_VULNERABILITY
+5. Evaluator generates structured feedback: what worked, what failed, suggestions for next hypothesis
+6. Evaluation results logged to `outputs/evaluations/` with experiment run ID reference
 
 ## Tasks / Subtasks
 
-- [ ] Outer Loop Orchestrator implemented in `loop/outer_loop.py` (AC: 1)
+- [ ] Evaluator implemented in `agents/evaluator.py` for data-based unlearning (AC: 1)
   - [ ] Add implementation subtasks
-- [ ] Orchestrator triggered when inner loop exits with VULNERABILITY_FOUND or max iterations (AC: 2)
+- [ ] Evaluator computes forget accuracy from experiment results using DeepUnlearn's evaluation functions (AC: 2)
   - [ ] Add implementation subtasks
-- [ ] Orchestrator workflow: call Reporter → wait for report generation → call all Judges → aggregate judgments (AC: 3)
+- [ ] Configurable threshold in `configs/evaluation_thresholds.yaml` (e.g., forget accuracy delta > 10%) (AC: 3)
   - [ ] Add implementation subtasks
-- [ ] Orchestrator logs all outputs and timestamps for reproducibility (AC: 4)
+- [ ] Evaluator determines: VULNERABILITY_FOUND, INCONCLUSIVE, or NO_VULNERABILITY (AC: 4)
   - [ ] Add implementation subtasks
-- [ ] Final output package saved to `outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary (AC: 5)
+- [ ] Evaluator generates structured feedback: what worked, what failed, suggestions for next hypothesis (AC: 5)
+  - [ ] Add implementation subtasks
+- [ ] Evaluation results logged to `outputs/evaluations/` with experiment run ID reference (AC: 6)
   - [ ] Add implementation subtasks
 
 ## Dev Notes
@@ -95,7 +88,6 @@ From [architecture/test-strategy-and-standards.md](../architecture/test-strategy
 | Date | Version | Description | Author |
 |------|---------|-------------|--------|
 | 2025-10-16 | 0.1 | Initial story creation | Sarah (PO Agent) |
-| 2025-10-20 | 0.2 | Updated to clarify Step 5 (5-iteration outer loop) and Step 6 (report + judging + memory) | Claude Code |
 
 ## Dev Agent Record
 

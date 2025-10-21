@@ -4,7 +4,7 @@
 
 This document outlines the overall project architecture for AUST (AI Scientist for Autonomous Unlearning Security Testing), including agent orchestration, data processing workflows, API integrations, and infrastructure deployment. Its primary goal is to serve as the guiding architectural blueprint for AI-driven development, ensuring consistency and adherence to chosen patterns and technologies.
 
-The architecture is designed to support AUST's autonomous research workflow: an inner research loop that iteratively generates hypotheses, retrieves relevant research, executes experiments, and evaluates results until vulnerabilities are discovered; and an outer loop that generates academic reports and multi-perspective judge evaluations. The system operates on machine unlearning methods (both data-based unlearning and concept-based erasure) to discover exploitable vulnerabilities through adaptive adversarial testing.
+The architecture is designed to support AUST's autonomous research workflow, structured as a 6-step process: (1) Input Validation, (2) Hypothesis Generation & Critic Loop with RAG retrieval (2-round minimum), (3) Attack Code Synthesis & Execution with self-repair (3-5 retry budget), (4) MLLM Evaluation, (5) Outer Loop (5 iterations of steps 2-4), and (6) Report Generation, Multi-Perspective Judging, and Memory Indexing. The system operates on machine unlearning methods (currently focused on concept-erasure unlearning with T2I models) to discover exploitable vulnerabilities through adaptive adversarial testing.
 
 ### Starter Template or Existing Project
 
@@ -15,12 +15,13 @@ The architecture is designed to support AUST's autonomous research workflow: an 
 | Date | Version | Description | Author |
 |------|---------|-------------|--------|
 | 2025-10-16 | 0.1 | Initial architecture document creation | Winston (Architect Agent) |
+| 2025-10-20 | 0.2 | Updated to reflect clarified 6-step workflow | Claude Code |
 
 ## High Level Architecture
 
 ### Technical Summary
 
-AUST implements a **stateful containerized agent orchestration system** running in Docker/Kubernetes with H200 GPU access. The architecture follows a **two-loop pattern**: an inner research loop that autonomously conducts experiments through multi-agent collaboration (Hypothesis Generator, Critic, Query Generator, Evaluator, Experiment Executor), and an outer reporting loop that generates academic papers and multi-perspective judge evaluations. The system uses **CAMEL-AI** in dev/editable mode for agent orchestration, **OpenRouter API** for flexible LLM/VLM access, **RAG (Retrieval-Augmented Generation)** with Qdrant vector database for paper retrieval, and **MCP FunctionTools** to integrate DeepUnlearn and concept-erasure methods. Core architectural patterns include **event-driven agent communication**, **repository pattern for data access**, and **strategy pattern for task-specific workflows** (data-based vs concept-erasure). This architecture supports the PRD goals of demonstrating autonomous end-to-end AI scientific research on machine unlearning vulnerabilities, with aggressive performance targets (< 30 min/iteration, < 5 hours total, ≥ 90% autonomy).
+AUST implements a **stateful containerized agent orchestration system** running in Docker/Kubernetes with H200 GPU access. The architecture follows a **6-step workflow pattern**: (1) Input Validation parses user input, (2) Hypothesis Generation & Critic Loop generates and refines attack hypotheses with RAG-based paper retrieval (2-round micro-loop minimum), (3) Attack Code Synthesis & Execution translates hypotheses into executable code with self-repair capability (3-5 retry budget), (4) MLLM Evaluation uses VLMs to assess attack success for concept leakage, (5) Outer Loop repeats steps 2-4 for 5 iterations to improve attack quality, and (6) Report Generation creates academic papers with multi-perspective judge evaluation and indexes successful attacks as experience memory. The system uses **CAMEL-AI** in dev/editable mode for agent orchestration, **OpenRouter API** for flexible LLM/VLM access, **RAG (Retrieval-Augmented Generation)** with Qdrant vector database for paper retrieval, and **MCP FunctionTools** to integrate concept-erasure methods. Core architectural patterns include **event-driven agent communication**, **repository pattern for data access**, and **strategy pattern for task-specific workflows**. This architecture supports the PRD goals of demonstrating autonomous end-to-end AI scientific research on machine unlearning vulnerabilities, with aggressive performance targets (< 30 min/iteration, < 5 hours total, ≥ 90% autonomy).
 
 ### High Level Overview
 
@@ -32,9 +33,13 @@ AUST uses a monolithic application architecture running in Docker containers, or
 
 **Service Architecture**: Single Python application with stateful execution. The application maintains loop state across iterations via persistent volumes, enabling restart/resume capabilities. Experiment execution is isolated for security, with timeout and retry logic for GPU job queue management.
 
-**Primary Data Flow**:
-1. **Inner Research Loop**: User initiates task → Inner Loop Orchestrator starts → Hypothesis Generator proposes attack (using RAG + memory + seed templates) → Critic debates (if iteration > 1) → Query Generator retrieves papers → Experiment Executor triggers unlearning/erasure via MCP FunctionTools → Evaluator assesses results (threshold-based or VLM-based) → feedback to next iteration → repeat until vulnerability found or max iterations
-2. **Outer Reporting Loop**: Inner loop completes → Outer Loop Orchestrator starts → Reporter generates academic paper from attack traces → 3-5 Judge personas evaluate report → outputs saved to persistent volumes
+**Primary Data Flow (6-Step Workflow)**:
+1. **Step 1: Input Validation**: User provides input (model details + unlearned concept, optional method) → Task Parser validates and creates TaskSpec → If invalid, reject; if valid, proceed to Step 2
+2. **Step 2: Hypothesis Generation & Critic Loop** (2-round micro-loop minimum): Hypothesis Generator creates naive hypothesis from template → Critic challenges hypothesis → Query Generator transforms hypothesis+feedback into RAG search queries → Retrieve relevant attack papers from Qdrant → Refine hypothesis with retrieved knowledge → Repeat critic-query-refine cycle for 2 rounds minimum
+3. **Step 3: Attack Code Synthesis & Execution**: Code Synthesis agent translates refined hypothesis into executable attack code → Execute code against unlearned model → If fails, Self-Repair agent analyzes error and fixes code (3-5 retry budget) → Generate attack results (images, metrics)
+4. **Step 4: MLLM Evaluation**: VLM Evaluator analyzes attack results to detect concept leakage → Determine if attack succeeded (concept leaked from unlearned model) → Generate evaluation feedback
+5. **Step 5: Outer Loop Iteration** (5 times): Feed evaluation results back to Step 2 → Hypothesis Generator uses feedback to propose improved attack → Repeat Steps 2-4 → Continue for 5 outer loop iterations to maximize attack quality
+6. **Step 6: Report Generation, Judging, and Memory Indexing**: After 5 outer loops complete, Reporter generates final academic report from all interaction history → Multi-Persona Judge group (3-5 judges) evaluates report quality → If attack successful, index hypothesis+results as "experience" memory in RAG for future reference → Outputs saved to persistent volumes
 
 **Key Architectural Decisions**:
 - **Monorepo + Monolith for MVP**: Simplifies dependency management and enables atomic commits across components, critical for aggressive 3-week timeline
@@ -64,7 +69,7 @@ graph TB
     end
 
     subgraph KnowledgeLayer[Knowledge Layer]
-        RAG[RAG System<br/>FAISS/Chroma]
+        RAG[RAG System<br/>Qdrant]
         Memory[Long-Term Memory<br/>CAMEL-AI]
         Papers[Paper Corpus<br/>10-20 per domain]
     end
@@ -131,7 +136,7 @@ graph TB
 
 **Pattern Selection**: The following patterns have been selected to guide AUST's architecture. Each pattern addresses specific requirements from the PRD while maintaining simplicity for the aggressive 3-week timeline.
 
-- **Two-Loop Orchestration Pattern (Inner/Outer Loops)**: Separates iterative research execution (inner) from result synthesis and evaluation (outer). *Rationale:* Aligns with PRD requirement for autonomous hypothesis-experiment-feedback cycles followed by academic reporting and judging. Enables clear exit conditions and state management between phases.
+- **Six-Step Workflow Pattern**: Structures the autonomous research process into distinct stages (Input Validation → Hypothesis Generation & Critic Loop → Code Synthesis & Execution → MLLM Evaluation → Outer Loop Iteration → Report & Judging). *Rationale:* Provides clear separation of concerns, enables step-by-step validation and debugging, supports modular development with independent testing of each stage, and aligns with PRD's requirement for autonomous hypothesis-experiment-feedback cycles with iterative refinement (5 outer loop iterations).
 
 - **Multi-Agent Collaboration with Role-Based Specialization**: Distinct agents (Hypothesis Generator, Critic, Query Generator, Experiment Executor, Evaluator, Reporter, Judges) with specific responsibilities. *Rationale:* Enables modular development and testing (critical for 3-week timeline), supports PRD's requirement for debate/challenge mechanisms (Critic), and allows independent agent improvements without affecting others.
 
@@ -175,7 +180,7 @@ The technology stack selections below are the **single source of truth** for AUS
 | **Configuration** | PyYAML | 6.0.1 | YAML config file parsing | Human-readable config files (prompts, thresholds, personas); easy versioning and iteration |
 | **Testing** | pytest | 7.4.3 | Unit and integration testing | Standard Python testing framework; excellent plugin ecosystem; supports fixtures for complex test setups |
 | **Testing Mocks** | pytest-mock | 3.12.0 | Mocking for external dependencies | Simplifies mocking OpenRouter API, GPU jobs, and external tools during testing |
-| **Container Testing** | Testcontainers Python | 3.7.1 | Integration testing with containers | Enables testing with real FAISS, file system isolation; validates deployment configuration |
+| **Container Testing** | Testcontainers Python | 3.7.1 | Integration testing with containers | Enables testing with real dependencies and isolated file systems; validates deployment configuration |
 | **Git Submodule** | DeepUnlearn | commit SHA pinned | Data-based unlearning experiments | Provides unlearning method implementations per FR6; git submodule enables version control and local modifications |
 | **Git Submodule** | Concept-Erasure Tools | TBD (specific repo to be selected) | Concept-erasure experiments | Provides concept-erasure implementations per FR7; specific tool to be selected in Epic 3 |
 | **Dependency Management** | pip | 23.3.1 | Package installation | Standard Python package manager; requirements.txt with pinned versions (NFR11) |
@@ -188,7 +193,7 @@ The technology stack selections below are the **single source of truth** for AUS
 1. **Are there any gaps or missing technologies** that you expected to see based on the PRD?
 2. **Do you disagree with any selections?** If so, which ones and why?
 3. **Are there specific version requirements** for any technologies that differ from what's listed?
-4. **Database selection**: The architecture currently uses FAISS (in-memory vector DB) and file-based storage (JSON for loop state, persistent volumes for outputs). Would you prefer a traditional database (PostgreSQL, MongoDB, etc.) for any components?
+4. **Database selection**: The architecture currently uses Qdrant (local collection) and file-based storage (JSON for loop state, persistent volumes for outputs). Would you prefer a traditional database (PostgreSQL, MongoDB, etc.) for any components?
 5. **Concept-Erasure Tool**: The specific concept-erasure repository is marked "TBD" - do you have a preferred tool (e.g., EraseDiff, specific concept ablation repo), or should we select during Epic 3 implementation?
 6. **Cloud vs On-Premises**: Is AUST deploying to an on-premises Kubernetes cluster with H200s, or to a cloud provider (GCP, AWS, Azure) with GPU instances?
 
@@ -440,6 +445,35 @@ The following data models represent the core business entities and data structur
 ## Components
 
 AUST is structured into logical components with clear responsibilities and interfaces. The architecture follows the repository structure from the PRD (monorepo with agents/, tools/, rag/, memory/, loop/, outputs/, configs/ directories).
+### Task Input Parser
+
+Responsibility: Validate and parse user task prompts into a normalized TaskSpec containing model details and unlearning target.
+
+Key Interfaces:
+- parse(text: str) -> TaskSpec
+
+Implementation Notes: Prefer deterministic regex with a narrow LLM fallback. Emits `outputs/{task_id}/task_spec.json`. Blocks inner loop start if required fields missing.
+
+### Attack Code Synthesis & Self-Repair
+
+Responsibility: Translate hypotheses into executable scripts, run them, and perform targeted self-repair on failures up to 3–5 attempts.
+
+Key Interfaces:
+- synthesize(hypothesis: Hypothesis, context: dict) -> CodeArtifact
+- execute(artifact: CodeArtifact) -> RunResult
+- repair(artifact: CodeArtifact, error_log: str) -> CodeArtifact
+
+Implementation Notes: Sandboxed subprocess with timeouts; logs and artifacts under `outputs/{task_id}/runs/{run_id}/`.
+
+### Memory-to-RAG Exporter
+
+Responsibility: When a successful attack is found, export a succinct "experience" chunk into the Qdrant collection for future retrieval.
+
+Key Interfaces:
+- export(memory_entry: MemoryEntry) -> None
+
+Implementation Notes: Use section="experience" and payload linking to attack trace and report.
+
 
 ### Inner Loop Orchestrator
 
@@ -612,14 +646,14 @@ AUST is structured into logical components with clear responsibilities and inter
 - `get_paper_metadata(paper_id: str) -> dict` - Returns citation metadata for a paper
 
 **Dependencies:**
-- FAISS vector database
+- Qdrant vector database
 - Sentence-Transformers (all-MiniLM-L6-v2 embedding model)
 - PyMuPDF (PDF text extraction)
 - Paper Corpus (PDFs in rag/papers/)
 
-**Technology Stack:** Python 3.11, FAISS 1.7.4, Sentence-Transformers 2.2.2, PyMuPDF 1.23.8
+**Technology Stack:** Python 3.11, Qdrant (local), Sentence-Transformers 2.2.2, PyMuPDF 1.23.8
 
-**Implementation Notes:** Chunks papers into semantically coherent sections (paragraph-level with overlap). Embeds using local Sentence-Transformers model (avoids OpenRouter API calls). FAISS index loaded in-memory for < 5s retrieval (NFR8). Supports paper corpus structure: rag/papers/data_unlearning/, rag/papers/concept_erasure/, rag/papers/attack_methods/.
+**Implementation Notes:** Chunks papers into semantically coherent sections (paragraph-level with overlap). Embeds using local Sentence-Transformers model (avoids OpenRouter API calls). Qdrant local collection provides < 5s retrieval (NFR8). Supports corpus structure: `.paper_cards/` section chunks with metadata and exported "experience" chunks from memory.
 
 ### Memory System
 
@@ -870,9 +904,64 @@ AUST integrates with external services for LLM/VLM access and infrastructure man
 
 ## Core Workflows
 
-The following sequence diagrams illustrate critical system workflows, showing component interactions and data flow.
+The following sections describe AUST's workflows, starting with the high-level 6-step process and then detailed sequence diagrams for each component interaction.
 
-### Inner Research Loop Workflow
+### AUST 6-Step Workflow Overview
+
+AUST's autonomous research process follows a structured 6-step workflow:
+
+**Step 1: Input Validation**
+- User provides input: model details (name/version) + unlearned concept/content + optional method
+- Task Parser validates required fields (model and concept must be specified)
+- Creates structured TaskSpec with validated inputs
+- If validation fails, reject with actionable error; if succeeds, proceed to Step 2
+
+**Step 2: Hypothesis Generation & Critic Loop** (2-round micro-loop minimum)
+- Hypothesis Generator creates naive hypothesis from seed template
+- Critic Agent challenges hypothesis with feedback
+- Query Generator transforms hypothesis + feedback into RAG search queries
+- Retrieve relevant attack papers from Qdrant vector database
+- Hypothesis Generator refines hypothesis using retrieved papers + critic feedback
+- Repeat critic-query-refine cycle for minimum 2 rounds to ensure quality
+
+**Step 3: Attack Code Synthesis & Execution** (3-5 retry budget)
+- Code Synthesis Agent translates refined hypothesis into executable Python attack code
+- Execute attack code against the unlearned model
+- If execution fails (errors, exceptions):
+  - Self-Repair Agent analyzes error messages and traceback
+  - Fixes code and retries execution (up to 3-5 attempts)
+- Generate attack results: output images, metrics, logs
+
+**Step 4: MLLM Evaluation**
+- VLM Evaluator receives attack results (generated images)
+- Uses Vision-Language Model to analyze images for concept leakage
+- Determines if attack succeeded (concept leaked from supposedly-unlearned model)
+- Generates evaluation feedback describing success/failure and observations
+
+**Step 5: Outer Loop Iteration** (5 iterations)
+- Feed evaluation results back to Step 2 as context for next iteration
+- Hypothesis Generator uses feedback to propose improved attack strategy
+- Repeat Steps 2-4 (Hypothesis → Critic → Query → Code → Evaluation)
+- Continue for 5 outer loop iterations to maximize attack effectiveness
+- Track hypothesis evolution and improvement across iterations
+
+**Step 6: Report Generation, Judging, and Memory Indexing**
+- After 5 outer loop iterations complete, Reporter Agent generates final academic report
+- Report includes: Introduction, Methods, Experiments, Results, Discussion, Conclusion
+- Report synthesizes all interaction history (all 5 iterations) with citations
+- Multi-Persona Judge system (3-5 judge personas) evaluates report quality
+- Each judge provides perspective-specific feedback (Security Expert, ML Researcher, etc.)
+- If attack was successful: index hypothesis + attack results as "experience" memory in RAG
+- Save all outputs (report, judge evaluations, attack traces) to persistent volumes
+
+**Workflow Properties:**
+- Steps 1-6 execute sequentially (Step N completes before Step N+1 starts)
+- Step 2 contains internal 2-round micro-loop (Hypothesis → Critic → Query → Refine)
+- Step 3 contains self-repair loop (up to 3-5 retry attempts)
+- Step 5 repeats Steps 2-4 five times (outer loop macro-iteration)
+- Step 6 only executes once after all outer loop iterations complete
+
+### Inner Research Loop Workflow (Steps 2-4 Detail)
 
 ```mermaid
 sequenceDiagram
@@ -1023,7 +1112,7 @@ sequenceDiagram
 sequenceDiagram
     participant Setup as Setup Script
     participant RAG as RAG System
-    participant FAISS as FAISS Index
+    participant Qdrant as Qdrant Collection
     participant Embedder as Sentence-Transformers
     participant Papers as Paper Corpus (PDFs)
 
@@ -1039,11 +1128,10 @@ sequenceDiagram
         RAG->>RAG: chunk_text(full_text, chunk_size=512, overlap=50)
         RAG->>Embedder: encode(chunks)
         Embedder-->>RAG: embeddings
-        RAG->>FAISS: add_vectors(embeddings, metadata)
+        RAG->>Qdrant: upsert(points=embeddings+metadata)
     end
 
-    RAG->>FAISS: save_index("rag/faiss_index.bin")
-    FAISS-->>RAG: index_saved
+    RAG-->>Qdrant: persisted
 
     Note over Setup,Papers: Runtime Retrieval (Inner Loop)
 
@@ -1051,8 +1139,8 @@ sequenceDiagram
     QG->>RAG: search(query="membership inference attacks", top_k=5)
     RAG->>Embedder: encode(query)
     Embedder-->>RAG: query_embedding
-    RAG->>FAISS: search(query_embedding, k=5)
-    FAISS-->>RAG: top_k_results (scores, chunk_ids)
+    RAG->>Qdrant: search(query_embedding, k=5, filter)
+    Qdrant-->>RAG: top_k_results (scores, point_ids)
     RAG->>RAG: retrieve_chunks_and_metadata(chunk_ids)
     RAG-->>QG: retrieved_papers (with chunks, scores, citations)
 ```
@@ -1098,7 +1186,7 @@ rag/
 │   └── attack_methods/
 │       ├── paper1.pdf
 │       └── ...
-├── faiss_index.bin                        # FAISS vector index
+├── vector_index/                          # Qdrant local storage
 └── paper_metadata.json                    # Paper metadata for citations
 
 configs/
@@ -1225,7 +1313,7 @@ CAUST/                                    # Monorepo root (https://github.com/vi
 │   │   ├── data_unlearning/
 │   │   ├── concept_erasure/
 │   │   └── attack_methods/
-│   ├── faiss_index.bin                   # FAISS vector index (generated)
+│   ├── vector_index/                     # Qdrant local storage (generated)
 │   └── paper_metadata.json               # Paper citations and metadata (generated)
 │
 ├── memory/                               # Memory system
