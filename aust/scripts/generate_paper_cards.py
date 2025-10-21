@@ -452,7 +452,7 @@ def main():
     parser.add_argument(
         "--input-mode",
         choices=["text", "pdf"],
-        default="text",
+        default="pdf",
         help="Whether to extract via pre-parsed text or direct PDF upload",
     )
 
