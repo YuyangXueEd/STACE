@@ -24,6 +24,7 @@ class SearchResult:
         similarity_score: Cosine similarity score (0-1)
         task_type: Task taxonomy (any-to-t, any-to-v)
         attack_level: Attack taxonomy level
+        model_type: Model modality tag from metadata (e.g., "T→I")
         paper_title: Full paper title
         card_path: Relative path to paper card
     """
@@ -34,6 +35,7 @@ class SearchResult:
     similarity_score: float
     task_type: str
     attack_level: str
+    model_type: str
     paper_title: str
     card_path: str
 
@@ -51,7 +53,7 @@ class PaperRAG:
 
     def __init__(
         self,
-        storage_path: str = "aust/src/rag/vector_index",
+        storage_path: str = "aust/rag_paper_db",
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         collection_name: str = DEFAULT_COLLECTION_NAME,
         similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
@@ -104,6 +106,7 @@ class PaperRAG:
         top_k: int = 5,
         section_filter: Optional[str] = None,
         task_type_filter: Optional[str] = None,
+        model_type_filter: Optional[str] = None,
         similarity_threshold: Optional[float] = None,
     ) -> List[SearchResult]:
         """Search for relevant paper chunks by semantic similarity.
@@ -113,6 +116,7 @@ class PaperRAG:
             top_k: Number of results to return
             section_filter: Filter by section type (METHODOLOGY, EXPERIMENTS, etc.)
             task_type_filter: Filter by task type (any-to-t, any-to-v)
+            model_type_filter: Filter by model modality (e.g., T→I)
             similarity_threshold: Override default similarity threshold
 
         Returns:
@@ -123,11 +127,13 @@ class PaperRAG:
         logger.info(
             f"Searching with query='{query[:50]}...', top_k={top_k}, "
             f"section_filter={section_filter}, task_type_filter={task_type_filter}, "
-            f"threshold={threshold}"
+            f"model_type_filter={model_type_filter}, threshold={threshold}"
         )
 
         # Build Qdrant filter conditions
-        filter_conditions = self._build_filter(section_filter, task_type_filter)
+        filter_conditions = self._build_filter(
+            section_filter, task_type_filter, model_type_filter
+        )
 
         # Always use direct Qdrant client for better control over metadata
         try:
@@ -198,6 +204,7 @@ class PaperRAG:
                 similarity_score=float(hit.score),
                 task_type=payload.get("task_type", "unknown"),
                 attack_level=payload.get("attack_level", "unknown"),
+                model_type=payload.get("model_type", "unknown"),
                 paper_title=payload.get("paper_title", "unknown"),
                 card_path=payload.get("card_path", "unknown"),
             )
@@ -231,6 +238,7 @@ class PaperRAG:
                 similarity_score=float(item.get("similarity score", 0.0)),
                 task_type=metadata.get("task_type", "unknown"),
                 attack_level=metadata.get("attack_level", "unknown"),
+                model_type=metadata.get("model_type", "unknown"),
                 paper_title=metadata.get("paper_title", "unknown"),
                 card_path=metadata.get("card_path", "unknown"),
             )
@@ -242,12 +250,14 @@ class PaperRAG:
         self,
         section_filter: Optional[str],
         task_type_filter: Optional[str],
+        model_type_filter: Optional[str],
     ) -> Optional[Filter]:
         """Build Qdrant filter from optional parameters.
 
         Args:
             section_filter: Section type filter
             task_type_filter: Task type filter
+            model_type_filter: Model modality filter
 
         Returns:
             Qdrant Filter object or None if no filters
@@ -263,6 +273,13 @@ class PaperRAG:
             conditions.append(
                 FieldCondition(
                     key="task_type", match=MatchValue(value=task_type_filter)
+                )
+            )
+
+        if model_type_filter:
+            conditions.append(
+                FieldCondition(
+                    key="model_type", match=MatchValue(value=model_type_filter)
                 )
             )
 
@@ -301,5 +318,6 @@ class PaperRAG:
             "paper_title": result.paper_title,
             "task_type": result.task_type,
             "attack_level": result.attack_level,
+            "model_type": result.model_type,
             "card_path": result.card_path,
         }

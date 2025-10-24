@@ -28,6 +28,7 @@ system_prompt: |
     "strengths": ["..."],
     "weaknesses": ["..."],
     "suggestions": ["..."],
-    "overall_assessment": "..."
+    "overall_assessment": "...",
+    "overall_assumption": "...",
   }
   ```

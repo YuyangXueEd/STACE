@@ -41,7 +41,7 @@ from aust.src.agents.mllm_evaluator import (
     EvaluationInputs,
     MLLMEvaluator,
 )
-from aust.src.logging_config import get_logger
+from aust.src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

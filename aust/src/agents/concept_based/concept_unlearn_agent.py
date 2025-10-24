@@ -35,7 +35,7 @@ from camel.agents import ChatAgent
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 
-from aust.src.logging_config import get_logger, setup_logging
+from aust.src.utils.logging_config import get_logger, setup_logging
 from aust.src.toolkits import ConceptUnlearnToolkit
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ def run_concept_unlearn_agent(
         prompts: List of user prompts to execute
         toolkit: ConceptUnlearnToolkit instance
         model_platform: LLM platform (default: OPENAI_COMPATIBLE_MODEL)
-        model_type: LLM model type (default: openai/gpt-4o)
+        model_type: LLM model type (default: openai/gpt-5)
         model_url: API URL (default: OpenRouter)
         api_key: API key for the LLM (default: from OPENROUTER_API_KEY env)
         temperature: LLM temperature (default: 0.2)

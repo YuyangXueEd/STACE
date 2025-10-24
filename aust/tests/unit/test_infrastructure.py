@@ -9,23 +9,22 @@ def test_directory_structure_exists() -> None:
     """Test that all required directories exist."""
     required_dirs = [
         "aust/src/agents",
-        "aust/src/tools",
+        "aust/src/toolkits",
         "aust/src/rag",
         "aust/src/memory",
         "aust/src/loop",
-        "aust/src/outputs",
-        "aust/src/configs/prompts",
-        "aust/src/configs/thresholds",
-        "aust/src/configs/tasks",
-        "aust/src/configs/personas",
-        "aust/src/experiments",
-        "aust/src/submodules",
-        "aust/src/external",
+        "aust/configs/prompts",
+        "aust/configs/thresholds",
+        "aust/configs/tasks",
+        "aust/configs/personas",
+        "aust/outputs",
+        "aust/experiments",
         "aust/tests/unit",
         "aust/tests/integration",
-        "aust/tests/fixtures",
         "aust/scripts",
         "aust/logs",
+        "aust/utils",
+        "aust/rag_paper_db",
     ]
 
     project_root = Path(__file__).parent.parent.parent.parent
@@ -40,7 +39,7 @@ def test_python_package_init_files_exist() -> None:
     package_dirs = [
         "aust/src",
         "aust/src/agents",
-        "aust/src/tools",
+        "aust/src/toolkits",
         "aust/src/rag",
         "aust/src/memory",
         "aust/src/loop",

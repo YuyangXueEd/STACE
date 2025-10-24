@@ -39,7 +39,7 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 from camel.types.agents import ToolCallingRecord
 
-from aust.src.logging_config import (
+from aust.src.utils.logging_config import (
     get_logger,
     set_correlation_id,
     setup_logging,

@@ -54,8 +54,7 @@ user_prompt_template: |
   [List specific hyperparameters if provided. If not mentioned, write "Not provided in paper"]
 
   ## Potential Attack Methods
-  [List 2-4 specific attack ideas derived from this paper's methodology. Format as numbered list.
-  Note that if the paper describes an unlearning method, the attack ideas should be used to assess whether models unlearned using this method remain robust.]
+  [List 2-4 specific attack ideas derived from this paper's methodology; For any generative models, regardless of the unlearning methods.   Format as numbered list.  ]
 
   ---
 

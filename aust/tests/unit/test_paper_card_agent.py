@@ -7,6 +7,13 @@ from unittest.mock import Mock, patch, MagicMock
 
 from aust.src.agents.paper_card_agent import PaperCardAgent
 
+CONFIG_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "configs"
+    / "prompts"
+    / "paper_card_extraction.yaml"
+)
+
 
 class TestPaperCardAgent:
     """Test suite for PaperCardAgent."""
@@ -17,7 +24,7 @@ class TestPaperCardAgent:
         with patch("aust.src.agents.paper_card_agent.ModelFactory"):
             with patch("aust.src.agents.paper_card_agent.ChatAgent"):
                 agent = PaperCardAgent(
-                    config_path="configs/prompts/paper_card_extraction.yaml",
+                    config_path=CONFIG_PATH,
                     model="openai/gpt-5-nano",
                 )
                 return agent
@@ -275,7 +282,7 @@ class TestPaperCardAgentErrorHandling:
         with patch("aust.src.agents.paper_card_agent.ModelFactory"):
             with patch("aust.src.agents.paper_card_agent.ChatAgent"):
                 agent = PaperCardAgent(
-                    config_path="configs/prompts/paper_card_extraction.yaml",
+                    config_path=CONFIG_PATH,
                     model="openai/gpt-5-nano",
                 )
                 return agent

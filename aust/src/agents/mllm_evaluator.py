@@ -17,11 +17,13 @@ The evaluation workflow includes:
 import json
 import os
 import base64
+from copy import deepcopy
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
 from collections import OrderedDict
+from aust.src.utils.model_config import load_model_settings
 
 import torch
 from camel.agents.chat_agent import ChatAgent
@@ -49,7 +51,7 @@ try:
 except ImportError:  # pragma: no cover - optional dependency for generation
     load_safetensors = None
 
-from aust.src.logging_config import get_logger
+from aust.src.utils.logging_config import get_logger
 from aust.src.toolkits.concept_unlearn_evaluation_toolkit import (
     ConceptUnlearnEvaluationToolkit,
     EvaluationMetrics,
@@ -57,6 +59,30 @@ from aust.src.toolkits.concept_unlearn_evaluation_toolkit import (
 
 logger = get_logger(__name__)
 load_dotenv()
+
+_MLLM_ASSESSMENT_MODEL_FALLBACK = {
+    "model_name": "openai/gpt-5-nano",
+    "config": {
+        "temperature": 0.0,
+        "max_tokens": 800,
+        "top_p": 0.9,
+    },
+}
+
+_MLLM_EVALUATOR_MODEL_FALLBACK = {
+    "model_name": "openai/gpt-5-nano",
+    "config": {
+        "temperature": 0.5,
+        "top_p": 0.9,
+    },
+}
+
+_MLLM_ASSESSMENT_MODEL_SETTINGS = load_model_settings(
+    "mllm_assessment_agent", _MLLM_ASSESSMENT_MODEL_FALLBACK
+)
+_MLLM_EVALUATOR_MODEL_SETTINGS = load_model_settings(
+    "mllm_evaluator", _MLLM_EVALUATOR_MODEL_FALLBACK
+)
 
 @dataclass
 class MLLMAssessmentResult:
@@ -99,7 +125,7 @@ class MLLMAssessmentAgent:
 
     def __init__(
         self,
-        vlm_model: str = "gpt-5-nano",
+        vlm_model: Optional[str] = None,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         """
@@ -109,21 +135,23 @@ class MLLMAssessmentAgent:
             vlm_model: Vision-Language Model to use (gpt-4v, claude-3, gemini)
             device: Device for inference
         """
-        self.vlm_model = vlm_model
+        settings = deepcopy(_MLLM_ASSESSMENT_MODEL_SETTINGS)
+        resolved_model = vlm_model or settings["model_name"]
+        config_dict = settings.get("config", {})
+
+        self.vlm_model = resolved_model
         self.device = device
-        logger.info(f"Initializing MLLMAssessmentAgent with model: {vlm_model}")
+        logger.info(f"Initializing MLLMAssessmentAgent with model: {resolved_model}")
 
         # Initialize VLM model via CAMEL
         try:
-            model_config = ChatGPTConfig(
-                temperature=0.0,  # Deterministic for consistent evaluation
-            )
+            model_config = ChatGPTConfig(**config_dict)
             self.model = ModelFactory.create(
                 model_platform=ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
-                model_type="openai/gpt-5-nano",
+                model_type=resolved_model,
                 url="https://openrouter.ai/api/v1",
                 api_key=os.getenv("OPENROUTER_API_KEY"),
-                model_config_dict={"temperature": 0.5},
+                model_config_dict=model_config.as_dict(),
             )
 
         except Exception as e:
@@ -354,17 +382,21 @@ class MLLMEvaluator:
         self.device = device
         logger.info("Initializing MLLMEvaluator")
 
-        model = ModelFactory.create(
+        evaluator_model_settings = deepcopy(_MLLM_EVALUATOR_MODEL_SETTINGS)
+        evaluator_config = ChatGPTConfig(
+            **evaluator_model_settings.get("config", {})
+        )
+        evaluator_model = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
-            model_type="openai/gpt-5-nano",
+            model_type=evaluator_model_settings["model_name"],
             url="https://openrouter.ai/api/v1",
             api_key=os.getenv("OPENROUTER_API_KEY"),
-            model_config_dict={"temperature": 0.5},
+            model_config_dict=evaluator_config.as_dict(),
         )
 
         # Initialize toolkits
         self.eval_toolkit = evaluation_toolkit or ConceptUnlearnEvaluationToolkit(device=device)
-        self.image_toolkit = image_analysis_toolkit or ImageAnalysisToolkit(model=model)
+        self.image_toolkit = image_analysis_toolkit or ImageAnalysisToolkit(model=evaluator_model)
         self.mllm_agent = mllm_agent or MLLMAssessmentAgent(device=device)
 
         self.max_images = max_images

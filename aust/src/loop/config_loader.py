@@ -1,0 +1,256 @@
+"""
+Configuration loader for hypothesis generation.
+
+Loads seed templates, prompts, and other configuration from YAML files.
+"""
+
+import random
+from pathlib import Path
+from typing import Any, Optional
+
+import yaml
+
+from aust.src.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
+
+class ConfigLoader:
+    """Loads and manages configuration for hypothesis generation."""
+
+    def __init__(self, config_dir: Optional[Path] = None):
+        """
+        Initialize configuration loader.
+
+        Args:
+            config_dir: Path to config directory (default: aust/configs)
+        """
+        if config_dir is None:
+            # Default to aust/configs
+            self.config_dir = Path(__file__).parent.parent.parent / "configs"
+        else:
+            self.config_dir = Path(config_dir)
+
+        logger.info(f"ConfigLoader initialized with config_dir: {self.config_dir}")
+
+        # Cache loaded configs
+        self._seed_templates_cache: dict[str, dict] = {}
+        self._prompts_cache: dict[str, dict] = {}
+
+    def load_seed_templates(self, task_type: str) -> dict[str, Any]:
+        """
+        Load seed templates for a task type.
+
+        Args:
+            task_type: Task type (e.g., "data_based_unlearning", "concept_erasure")
+
+        Returns:
+            Dictionary with seed templates configuration
+
+        Raises:
+            FileNotFoundError: If template file doesn't exist
+            ValueError: If template file is invalid
+        """
+        if task_type in self._seed_templates_cache:
+            return self._seed_templates_cache[task_type]
+
+        template_file = self.config_dir / "tasks" / f"{task_type}.yaml"
+
+        if not template_file.exists():
+            raise FileNotFoundError(
+                f"Seed template file not found: {template_file}. "
+                f"Available task types: {self.get_available_task_types()}"
+            )
+
+        logger.info(f"Loading seed templates from {template_file}")
+
+        try:
+            with open(template_file, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+
+            # Validate structure
+            if not isinstance(config, dict):
+                raise ValueError("Seed template file must contain a YAML dictionary")
+
+            seed_templates = config.get("seed_templates") or []
+
+            if not seed_templates:
+                # Fallback: load from starter template only
+                logger.warning(
+                    "No seed templates defined in %s; falling back to starter_template.yaml",
+                    template_file,
+                )
+                config["seed_templates"] = self._load_starter_seed_templates()
+            else:
+                config["seed_templates"] = seed_templates
+
+            # Cache and return
+            self._seed_templates_cache[task_type] = config
+            logger.info(
+                f"Loaded {len(config['seed_templates'])} seed templates for {task_type}"
+            )
+            return config
+
+        except yaml.YAMLError as e:
+            raise ValueError(f"Failed to parse YAML file {template_file}: {e}") from e
+        except Exception as e:
+            raise ValueError(f"Failed to load seed templates: {e}") from e
+
+    def get_seed_template(
+        self,
+        task_type: str,
+        iteration: int,
+    ) -> Optional[dict]:
+        """
+        Get a seed template for hypothesis generation.
+
+        Args:
+            task_type: Task type (e.g., "data_based_unlearning")
+            iteration: Current iteration number (1-indexed)
+
+        Returns:
+            Selected seed template dict, or None if no template should be used
+
+        Raises:
+            ValueError: If required templates are not available
+        """
+        # Only use seed templates for iteration 1
+        if iteration != 1:
+            logger.debug(f"No seed template for iteration {iteration} (only iter 1)")
+            return None
+
+        config = self.load_seed_templates(task_type)
+        templates = config["seed_templates"]
+
+        if not templates:
+            raise ValueError(f"No seed templates available for task type '{task_type}'")
+
+        # Check if template_selection specifies a specific template for iteration 1
+        template_selection = config.get("template_selection", {})
+        if iteration == 1 and template_selection.get("iteration_1_strategy") == "specific":
+            template_id = template_selection.get("iteration_1_template_id")
+            if template_id:
+                for template in templates:
+                    if template.get("id") == template_id:
+                        logger.info(f"Selected specific seed template for iteration 1: {template_id}")
+                        return template
+                raise ValueError(
+                    f"Configured template id '{template_id}' not found for task type '{task_type}'."
+                )
+
+        template = random.choice(templates)
+        logger.info(f"Selected seed template: {template.get('id', 'unknown')}")
+        return template
+
+    def _load_starter_seed_templates(self) -> list[dict]:
+        """Load seed templates from starter_template.yaml."""
+        starter_path = self.config_dir / "prompts" / "starter_template.yaml"
+        if not starter_path.exists():
+            raise ValueError(
+                "Starter seed template not found; provide at least one template in starter_template.yaml"
+            )
+
+        with open(starter_path, "r", encoding="utf-8") as starter_file:
+            starter_payload = yaml.safe_load(starter_file)
+
+        if not isinstance(starter_payload, dict):
+            raise ValueError("Starter template must be a dictionary")
+
+        starter_template = starter_payload.get("seed_template")
+        if not isinstance(starter_template, dict):
+            raise ValueError("'seed_template' key missing or invalid in starter template")
+
+        starter_id = starter_template.get("id") or "starter_template"
+        logger.info(
+            "Loaded starter seed template '%s' from %s",
+            starter_id,
+            starter_path,
+        )
+
+        return [starter_template]
+
+    def get_available_task_types(self) -> list[str]:
+        """
+        Get list of available task types with seed templates.
+
+        Returns:
+            List of task type names (without .yaml extension)
+        """
+        tasks_dir = self.config_dir / "tasks"
+        if not tasks_dir.exists():
+            return []
+
+        task_files = tasks_dir.glob("*.yaml")
+        return [f.stem for f in task_files]
+
+    def load_prompt_config(self, agent_name: str, task_type: Optional[str] = None) -> dict:
+        """
+        Load prompt configuration for an agent.
+
+        Args:
+            agent_name: Agent name (e.g., "hypothesis_generator", "critic")
+            task_type: Optional task type for task-specific prompts
+
+        Returns:
+            Dictionary with prompt configuration
+
+        Raises:
+            FileNotFoundError: If prompt file doesn't exist
+        """
+        # Try task-specific prompt first
+        if task_type:
+            cache_key = f"{agent_name}_{task_type}"
+            if cache_key in self._prompts_cache:
+                return self._prompts_cache[cache_key]
+
+            prompt_file = self.config_dir / "prompts" / f"{agent_name}_{task_type}.yaml"
+            if prompt_file.exists():
+                return self._load_prompt_file(prompt_file, cache_key)
+
+        # Fall back to generic prompt
+        cache_key = agent_name
+        if cache_key in self._prompts_cache:
+            return self._prompts_cache[cache_key]
+
+        prompt_file = self.config_dir / "prompts" / f"{agent_name}.yaml"
+        if not prompt_file.exists():
+            raise FileNotFoundError(
+                f"Prompt configuration not found: {prompt_file}. "
+                f"Available agents: {self.get_available_agents()}"
+            )
+
+        return self._load_prompt_file(prompt_file, cache_key)
+
+    def _load_prompt_file(self, prompt_file: Path, cache_key: str) -> dict:
+        """Load and cache a prompt configuration file."""
+        logger.info(f"Loading prompt config from {prompt_file}")
+
+        try:
+            with open(prompt_file, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+
+            if not isinstance(config, dict):
+                raise ValueError("Prompt config file must contain a YAML dictionary")
+
+            # Cache and return
+            self._prompts_cache[cache_key] = config
+            return config
+
+        except yaml.YAMLError as e:
+            raise ValueError(f"Failed to parse YAML file {prompt_file}: {e}") from e
+        except Exception as e:
+            raise ValueError(f"Failed to load prompt config: {e}") from e
+
+    def get_available_agents(self) -> list[str]:
+        """
+        Get list of agents with prompt configurations.
+
+        Returns:
+            List of agent names (without .yaml extension)
+        """
+        prompts_dir = self.config_dir / "prompts"
+        if not prompts_dir.exists():
+            return []
+
+        prompt_files = prompts_dir.glob("*.yaml")
+        return [f.stem for f in prompt_files]

@@ -355,7 +355,7 @@ The following data models represent the core business entities and data structur
 
 **Key Attributes:**
 - `iteration`: int - Iteration number
-- `hypothesis_summary`: str - Brief description of the hypothesis
+- `hypothesis_description`: str - Brief description of the hypothesis
 - `key_papers`: list[str] - Titles of most relevant papers retrieved
 - `experiment_summary`: str - What was tested and how
 - `result_summary`: str - Outcome of the experiment

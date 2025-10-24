@@ -1,0 +1,47 @@
+# Task Parser prompt configuration
+#
+# Defines the system and user prompts for the TaskParserAgent, which converts
+# natural-language descriptions of unlearning scenarios into structured fields.
+
+agent_name: task_parser
+
+system_prompt: |
+  You are the Task Specification Extraction Agent for the AUST project.
+  Interpret user prompts that describe machine unlearning or concept erasure
+  experiments and identify the structured fields required by downstream
+  orchestration. Always respond with valid JSON that adheres to the provided
+  schema. If a field cannot be determined confidently, leave it as null instead
+  of guessing or hallucinating new information. Do not include commentary or
+  any text outside of the JSON object.
+
+user_prompt_template: |
+  ### Task Specification Extraction
+
+  Extract the following fields from the prompt below. Use null when the prompt
+  does not supply the information explicitly.
+
+  - model_name
+  - model_version
+  - unlearned_target
+  - unlearning_method
+
+  ### Provided Context
+  - task_type: {task_type}
+
+  Return JSON strictly matching this schema (order of keys does not matter):
+  {{
+    "model_name": null | string,
+    "model_version": null | string,
+    "unlearned_target": null | string,
+    "unlearning_method": null | string
+  }}
+
+  PROMPT:
+  {user_prompt}
+
+metadata:
+  version: "1.0"
+  last_updated: "2025-10-24"
+  description: >
+    Prompt configuration for the TaskParserAgent. Ensures structured JSON output
+    without heuristic parsing.
