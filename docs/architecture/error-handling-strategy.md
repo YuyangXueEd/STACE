@@ -67,7 +67,7 @@
   - `HypothesisGenerationException`: Raised when hypothesis generator fails to produce valid hypothesis
   - `ExperimentExecutionException`: Raised when GPU job fails or times out
   - `EvaluationException`: Raised when evaluator cannot assess results (e.g., VLM failure)
-- **User-Facing Errors:** Errors logged to outputs/{task_id}/error.log with user-friendly messages (avoid stack traces in user outputs)
+- **User-Facing Errors:** Errors logged to aust/outputs/{task_id}/error.log with user-friendly messages (avoid stack traces in user outputs)
 - **Error Codes:** Simple string codes: "OPENROUTER_RATE_LIMIT", "GPU_TIMEOUT", "INVALID_CONFIG", "HYPOTHESIS_GENERATION_FAILED"
 
 ### Data Consistency

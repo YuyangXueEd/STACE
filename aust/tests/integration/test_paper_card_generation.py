@@ -9,7 +9,14 @@ from pathlib import Path
 from unittest.mock import patch, Mock
 
 from aust.src.agents.paper_card_agent import PaperCardAgent
-from scripts.generate_paper_cards import PaperCardBatchProcessor
+from aust.scripts.generate_paper_cards import PaperCardBatchProcessor
+
+CONFIG_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "configs"
+    / "prompts"
+    / "paper_card_extraction.yaml"
+)
 
 
 class TestPaperCardGenerationIntegration:
@@ -60,7 +67,7 @@ class TestPaperCardGenerationIntegration:
         """Test generating a single paper card with real LLM (manual test)."""
         # Initialize agent
         agent = PaperCardAgent(
-            config_path="configs/prompts/paper_card_extraction.yaml",
+            config_path=CONFIG_PATH,
             model="openai/gpt-5-nano",
         )
 
@@ -228,7 +235,7 @@ Cross-modal attention manipulation could test concept erasure effectiveness.
 
         # Initialize agent
         agent = PaperCardAgent(
-            config_path="configs/prompts/paper_card_extraction.yaml",
+            config_path=CONFIG_PATH,
             model="openai/gpt-5-nano",
         )
 
@@ -306,7 +313,7 @@ Test relevance analysis with sufficient length to pass quality checks.
             papers_dir=str(test_data_dir["papers_dir"]),
             cards_dir=str(test_data_dir["cards_dir"]),
             metadata_file=str(test_data_dir["metadata_file"]),
-            config_path="configs/prompts/paper_card_extraction.yaml",
+            config_path=CONFIG_PATH,
             model="openai/gpt-5-nano",
         )
 

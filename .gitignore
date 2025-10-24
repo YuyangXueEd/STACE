@@ -15,8 +15,8 @@ data/
 .backup/
 aust/rag_paper_db/
 # Paper cards - gitignore progress/logs but track markdown cards
-.paper_cards/.generation_progress.json
-.paper_cards/.failed_extractions.json
+.paper_cards/
+.paper_cards_old/
 
 
 .env
@@ -83,7 +83,7 @@ dmypy.json
 Thumbs.db
 
 # CAUST specific
-aust/src/outputs/*
-!aust/src/outputs/.gitkeep
+aust/outputs/*
+!aust/outputs/.gitkeep
 aust/src/rag/faiss_index.bin
 aust/src/rag/paper_metadata.json

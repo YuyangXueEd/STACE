@@ -94,7 +94,7 @@ After 5 outer loop iterations complete, proceed to **Step 6** (Report Generation
 
 **NFR3**: The system shall integrate DeepUnlearn as a git submodule for version control and local modifications.
 
-**NFR4**: The system shall use OpenRouter API for LLM/VLM access supporting multiple models (GPT-4o, Claude 3.5 Sonnet, etc.).
+**NFR4**: The system shall use OpenRouter API for LLM/VLM access supporting multiple models (GPT-5, Claude 3.5 Sonnet, etc.).
 
 **NFR5**: The system shall use Python 3.11+ as the primary implementation language.
 
@@ -149,7 +149,7 @@ The AUST project will use a monorepo structure at https://github.com/vios-s/CAUS
 - **Paper Corpus Management**: 101 paper cards (structured markdown with Methodology, Experiments, Results sections) generated in Story 2.1.1 from collected PDFs. RAG system uses **Qdrant** for vector database with **SentenceTransformers** (all-MiniLM-L6-v2, 384-dim) for local embeddings. Section-level chunking (~400-500 chunks) with metadata filtering (section type, task type, attack level). Decision rationale: Vector RAG (not GraphRAG) meets MVP timeline and semantic search requirements; Qdrant chosen for integrated metadata storage, local persistence, CAMEL-AI compatibility, and <5s retrieval (NFR8).
  - **Paper Corpus Management**: 101 paper cards (structured markdown with Methodology, Experiments, Results sections) generated in Story 2.1.1 from collected PDFs. RAG system uses **Qdrant** for vector database with **SentenceTransformers** (all-MiniLM-L6-v2, 384-dim) for local embeddings. Section-level chunking (~400-500 chunks) with metadata filtering (section type, task type, attack level). Decision rationale: Vector RAG (not GraphRAG) meets MVP timeline and semantic search requirements; Qdrant chosen for integrated metadata storage, local persistence, CAMEL-AI compatibility, and <5s retrieval (NFR8). In addition to papers, successful memories are indexed as an "experience" section for retrieval.
 
-- **Agent Prompting Strategy**: Agents use prompt-based task differentiation for data-based vs concept-erasure workflows. Prompts stored in `configs/` directory for easy iteration and versioning.
+- **Agent Prompting Strategy**: Agents use prompt-based task differentiation for data-based vs concept-erasure workflows. Prompts stored in `aust/configs/` directory for easy iteration and versioning.
 
 - **Seed Hypothesis Templates**: Pre-load 3-5 known attack patterns (membership inference, model inversion, data extraction) as seed templates to mitigate hypothesis quality risk (identified as HIGH risk in brief).
 
@@ -157,7 +157,7 @@ The AUST project will use a monorepo structure at https://github.com/vios-s/CAUS
 
 - **Judge Persona Definitions**: 3-5 judge personas pre-defined: Security Expert, ML Researcher, Privacy Advocate, Skeptical Reviewer, Industry Practitioner. Each has specific evaluation criteria and perspective.
 
-- **Evaluation Metric Thresholds**: Configurable thresholds in `configs/` - data-based: forget accuracy delta; concept-erasure: generation-based leakage probability, CLIP score changes.
+- **Evaluation Metric Thresholds**: Configurable thresholds in `aust/configs/` - data-based: forget accuracy delta; concept-erasure: generation-based leakage probability, CLIP score changes.
 
 - **Error Handling & Logging**: Comprehensive logging for debugging (all agent interactions, API calls, experiment results). Graceful degradation for API failures, GPU unavailability, or tool integration errors.
 
@@ -198,11 +198,11 @@ so that the system only runs when at least the model details and the unlearned c
 
 #### Acceptance Criteria
 
-1. Input Parser implemented in `loop/task_parser.py` with Pydantic TaskSpec model
+1. Input Parser implemented in `aust/src/loop/task_parser.py` with Pydantic TaskSpec model
 2. Accepts natural language prompt and extracts: model_name/version, unlearning_target (concept/content), optional method info
 3. Validates required fields and returns actionable errors on failure
 4. Parses example pattern: "A Stable Diffusion 1.4 model unlearned with concept Cat {with ESD method}"
-5. Emits normalized TaskSpec JSON into `outputs/{task_id}/task_spec.json`
+5. Emits normalized TaskSpec JSON into `aust/outputs/{task_id}/task_spec.json`
 6. Integrated pre-check in Inner Loop Orchestrator; loop does not start if validation fails
 
 
@@ -214,7 +214,7 @@ so that **the team has a working development environment ready for agent impleme
 
 #### Acceptance Criteria
 
-1. Repository at https://github.com/vios-s/CAUST is initialized with directory structure: `agents/`, `tools/`, `rag/`, `memory/`, `loop/`, `outputs/`, `configs/`, `experiments/`, `submodules/`, `external/`, `docker/`
+1. Repository at https://github.com/vios-s/CAUST is initialized with directory structure: `aust/src/agents`, `aust/src/toolkits`, `aust/src/rag`, `aust/src/memory`, `aust/src/loop`, `aust/outputs`, `aust/configs`, `aust/experiments`, `external/`, `docker/`
 2. Docker conda_Dockerfile builds successfully with Python 3.11+ and core dependencies (PyTorch, CAMEL-AI requirements)
 3. Kubernetes job.yaml is configured for H200 GPU access and persistent volume mounts for outputs
 4. `requirements.txt` includes pinned versions of core dependencies (PyTorch, CAMEL-AI, OpenRouter client)
@@ -231,8 +231,8 @@ so that **we can create and modify agents as needed throughout development**.
 
 1. CAMEL-AI is cloned/installed in `external/camel/` with `pip install -e external/camel`
 2. Basic test agent (simple echo agent) successfully instantiates using CAMEL-AI's agent API
-3. OpenRouter API integration is tested with at least one model call (GPT-4o or Claude 3.5)
-4. Agent prompt configuration system is implemented in `configs/` directory (YAML or JSON format)
+3. OpenRouter API integration is tested with at least one model call (GPT-5 or Claude 3.5)
+4. Agent prompt configuration system is implemented in `aust/configs/` directory (YAML or JSON format)
 5. Basic agent interaction logging captures all LLM API calls and responses
 
 ### Story 1.3.1: T2I Unlearning Attack Pipeline ✅ Ready for Review
@@ -286,7 +286,7 @@ so that **the system autonomously generates high-quality, testable vulnerability
 
 #### Acceptance Criteria
 
-1. Hypothesis Refinement Workforce implemented as a cohesive module in `agents/hypothesis_workforce.py`
+1. Hypothesis Refinement Workforce implemented as a cohesive module in `aust/src/agents/hypothesis_workforce.py`
 2. Workforce uses CAMEL-AI Workforce pattern to coordinate Hypothesis Generator and Critic agents
 3. Workforce implements 2-round debate cycle with self-improving CoT reasoning
 4. Hypothesis Generator accepts context inputs: task type, past experiment results, evaluator feedback, retrieved papers chunks from RAG
@@ -297,7 +297,7 @@ so that **the system autonomously generates high-quality, testable vulnerability
 8. Critic provides structured feedback: strengths, weaknesses, specific suggestions for improvement
 9. Hypothesis Generator incorporates critic feedback using CoT reasoning
 10. Workforce activates after first inner loop iteration (when feedback from evaluator is available)
-11. Full debate exchange logged to `outputs/{task_id}/debates/iteration_{n}.json`
+11. Full debate exchange logged to `aust/outputs/{task_id}/debates/iteration_{n}.json`
 12. Final hypothesis from workforce integrates with existing Inner Loop Orchestrator state machine
 
 **See**: [docs/stories/1.5.hypothesis-refinement-workforce.md](docs/stories/1.5.hypothesis-refinement-workforce.md)
@@ -310,7 +310,7 @@ so that **hypotheses can be tested automatically on real unlearning methods**.
 
 #### Acceptance Criteria
 
-1. Experiment Executor implemented in `agents/experiment_executor.py`
+1. Experiment Executor implemented in `aust/src/agents/experiment_executor.py`
 2. Executor parses hypothesis structure and translates to DeepUnlearn FunctionTool calls
 3. Executor handles experiment execution: trigger unlearning, wait for completion, collect results
 4. Timeout handling (max 30 minutes per experiment as per NFR6) with graceful failure
@@ -325,12 +325,12 @@ so that **the system can automatically detect when vulnerabilities are discovere
 
 #### Acceptance Criteria
 
-1. Evaluator implemented in `agents/evaluator.py` for data-based unlearning
+1. Evaluator implemented in `aust/src/agents/evaluator.py` for data-based unlearning
 2. Evaluator computes forget accuracy from experiment results using DeepUnlearn's evaluation functions
-3. Configurable threshold in `configs/evaluation_thresholds.yaml` (e.g., forget accuracy delta > 10%)
+3. Configurable threshold in `aust/configs/evaluation_thresholds.yaml` (e.g., forget accuracy delta > 10%)
 4. Evaluator determines: VULNERABILITY_FOUND, INCONCLUSIVE, or NO_VULNERABILITY
 5. Evaluator generates structured feedback: what worked, what failed, suggestions for next hypothesis
-6. Evaluation results logged to `outputs/evaluations/` with experiment run ID reference
+6. Evaluation results logged to `aust/outputs/evaluations/` with experiment run ID reference
 
 ### Story 1.8: Inner Loop Orchestrator
 
@@ -340,12 +340,12 @@ so that **the system autonomously iterates until a vulnerability is discovered o
 
 #### Acceptance Criteria
 
-1. Loop Orchestrator implemented in `loop/inner_loop.py`
+1. Loop Orchestrator implemented in `aust/src/loop/inner_loop_orchestrator.py`
 2. Orchestrator manages loop state: iteration count, experiment history, current hypothesis, feedback
 3. Loop flow: Hypothesis Generator → (Critic if iteration > 1) → Experiment Executor → Evaluator → check exit condition
-4. Exit conditions: VULNERABILITY_FOUND OR iteration count >= 10 (configurable in `configs/loop_config.yaml`)
-5. Loop state persisted to `outputs/loop_state.json` after each iteration (supports restart)
-6. Attack trace generation: each iteration's hypothesis, experiment parameters, results, and feedback appended to `outputs/attack_traces/trace_{run_id}.md`
+4. Exit conditions: VULNERABILITY_FOUND OR iteration count >= 10 (configurable in `aust/configs/loop_config.yaml`)
+5. Loop state persisted to `aust/outputs/loop_state.json` after each iteration (supports restart)
+6. Attack trace generation: each iteration's hypothesis, experiment parameters, results, and feedback appended to `aust/outputs/attack_traces/trace_{run_id}.md`
 
 ### Story 1.9: End-to-End Inner Loop Test
 ### Story 1.6a: Attack Code Synthesis & Self-Repair Loop (New)
@@ -356,8 +356,8 @@ so that failed executions are retried up to 3–5 times before giving up.
 
 #### Acceptance Criteria
 
-1. Code Synthesis agent implemented in `agents/code_synthesizer.py` with prompts tailored for our toolkits and environment
-2. Execution runner integrated with sandboxed subprocess and timeouts; logs captured to `outputs/{task_id}/runs/{run_id}/`
+1. Code Synthesis agent implemented in `aust/src/agents/code_synthesizer.py` with prompts tailored for our toolkits and environment
+2. Execution runner integrated with sandboxed subprocess and timeouts; logs captured to `aust/outputs/{task_id}/runs/{run_id}/`
 3. On failure (non-zero exit, exception), the agent inspects error logs and regenerates code with targeted fixes; retry budget configurable (3–5)
 4. Success/failure with artifacts and logs reported back to Inner Loop Orchestrator
 5. Works for both concept-erasure attack scripts and data-based DeepUnlearn wrappers
@@ -399,9 +399,9 @@ so that **the hypothesis generation agent can efficiently retrieve relevant rese
 
 1. Paper card markdown template created in `.paper_cards/TEMPLATE.md` with sections: Metadata, Quick Summary, Research Problem, Methodology, Experiment Design, Key Results Summary, Implementation Details, Relevance to Our Work, Key Quotes, Related Work Mentioned, Citation
 2. Template includes metadata fields: generation_date, agent_model for traceability
-3. Paper Card Agent implemented in `agents/paper_card_agent.py` extending CAMEL-AI ChatAgent
+3. Paper Card Agent implemented in `aust/src/agents/paper_card_agent.py` extending CAMEL-AI ChatAgent
 4. Agent uses LLM (gpt-5-nano via OpenRouter) to extract structured information from PDFs
-5. Agent prompt configuration in `configs/prompts/paper_card_extraction.yaml`
+5. Agent prompt configuration in `aust/configs/prompts/paper_card_extraction.yaml`
 6. Agent handles PDF processing edge cases (figures, tables, references)
 7. Batch processing script `scripts/generate_paper_cards.py` generates cards for all 101 papers
 8. Paper card metadata file `.paper_cards/card_metadata.json` tracks generation status
@@ -448,10 +448,10 @@ so that **the system retrieves relevant papers automatically from the Qdrant-bas
 
 #### Acceptance Criteria
 
-1. Query Generator agent implemented in `agents/query_generator.py`
+1. Query Generator agent implemented in `aust/src/agents/query_generator.py`
 2. Agent accepts inputs: current hypothesis (if any), evaluation feedback, task type (concept-erasure or data-based), iteration number
 3. Agent generates 1-3 search queries focusing on: attack methods, unlearning vulnerabilities, relevant evaluation metrics
-4. Queries are logged to `outputs/{task_id}/queries/iteration_{n}.json` with timestamp
+4. Queries are logged to `aust/outputs/{task_id}/queries/iteration_{n}.json` with timestamp
 5. Query Generator calls `PaperRAG.search()` interface from Story 2.2:
    - Uses section filtering (e.g., `section_filter="METHODOLOGY"` for attack methods)
    - Uses task type filtering (e.g., `task_type_filter="any-to-t"` for T2I papers)
@@ -488,7 +488,7 @@ so that **the system learns from past successes across multiple runs**.
 2. Successful experiments (VULNERABILITY_FOUND) are stored with: hypothesis, experiment parameters, results, attack trace reference
 3. Memory retrieval interface: `get_successful_attacks(task_type)` returns past successful attacks for given task
 4. Hypothesis Generator queries memory at start of each run to inform initial hypothesis generation
-5. Memory persisted to `outputs/memory_store/` (survives container restarts per NFR14)
+5. Memory persisted to `aust/outputs/memory_store/` (survives container restarts per NFR14)
 6. Successful memories are exported to the Qdrant collection `aust_papers` with section="experience" for PaperRAG retrieval
 
 ### Story 2.6: RAG-Enhanced End-to-End Test
@@ -532,10 +532,10 @@ so that **the system can automatically identify when concept-erasure fails**.
 
 #### Acceptance Criteria
 
-1. VLM Evaluator added to `agents/evaluator.py` (or new `agents/vlm_evaluator.py`) for concept-erasure task
+1. VLM Evaluator added to `aust/src/agents/evaluator.py` (or new `aust/src/agents/vlm_evaluator.py`) for concept-erasure task
 2. Evaluator generates test prompts designed to elicit the supposedly-erased concept
 3. Evaluator analyzes generated images using VLM (via OpenRouter: GPT-4V, Claude 3.5) to detect concept presence
-4. Configurable thresholds in `configs/evaluation_thresholds.yaml`: concept leakage probability, CLIP score changes (if applicable)
+4. Configurable thresholds in `aust/configs/evaluation_thresholds.yaml`: concept leakage probability, CLIP score changes (if applicable)
 5. Evaluator determines: VULNERABILITY_FOUND (concept leaked), INCONCLUSIVE, or NO_VULNERABILITY (concept successfully erased)
 6. Evaluation results include both VLM qualitative assessment and quantitative metrics (if available)
 
@@ -547,9 +547,9 @@ so that **agents understand the specific requirements of concept-erasure tasks**
 
 #### Acceptance Criteria
 
-1. New prompt configurations in `configs/prompts_concept_erasure.yaml` for: Hypothesis Generator, Critic, Query Generator, Evaluator
+1. New prompt configurations in `aust/configs/prompts_concept_erasure.yaml` for: Hypothesis Generator, Critic, Query Generator, Evaluator
 2. Prompts use concept-erasure terminology: "concept leakage", "generation-based attacks", "concept resurgence", "visual probing"
-3. Seed hypothesis templates for concept-erasure added to `configs/seed_hypotheses.yaml`: adversarial prompts, concept combination attacks, style transfer probing
+3. Seed hypothesis templates for concept-erasure added to `aust/configs/seed_hypotheses.yaml`: adversarial prompts, concept combination attacks, style transfer probing
 4. Hypothesis Generator selects appropriate prompt set based on task type parameter
 5. All concept-erasure-specific prompts tested with sample inputs/outputs
 
@@ -577,7 +577,7 @@ so that **the system can switch between task types seamlessly**.
 
 1. Loop Orchestrator modified to accept task_type parameter: "data_based" or "concept_erasure"
 2. Orchestrator routes to appropriate tools and evaluators based on task_type
-3. Loop configuration `configs/loop_config.yaml` specifies task-specific settings: max iterations, evaluation thresholds, target methods
+3. Loop configuration `aust/configs/loop_config.yaml` specifies task-specific settings: max iterations, evaluation thresholds, target methods
 4. Attack traces clearly indicate task type and use appropriate terminology
 5. System can run data-based and concept-erasure tasks sequentially without code changes (only config changes)
 
@@ -608,11 +608,11 @@ so that **the system produces publication-ready reports automatically**.
 
 #### Acceptance Criteria
 
-1. Reporter agent implemented in `agents/reporter.py`
-2. Report template defined in `configs/report_template.md` with sections: Introduction, Methods, Experiments, Results, Discussion, Conclusion
+1. Reporter agent implemented in `aust/src/agents/reporter.py`
+2. Report template defined in `aust/configs/report_template.md` with sections: Introduction, Methods, Experiments, Results, Discussion, Conclusion
 3. Reporter accepts inputs: attack traces (all iterations), successful experiments, evaluation results, retrieved paper references
 4. Reporter generates section outlines based on inputs (e.g., Methods describes hypothesis generation + experiment execution workflow)
-5. Generated report saved to `outputs/reports/report_{run_id}.md` in Markdown format
+5. Generated report saved to `aust/outputs/reports/report_{run_id}.md` in Markdown format
 6. Report includes metadata: date, task type, target unlearning method, number of iterations
 
 ### Story 4.2: Reporter Agent - Content Generation with Citations
@@ -642,7 +642,7 @@ so that **the Reporter can use traces as primary evidence**.
 1. Attack trace format enhanced to include: iteration number, hypothesis rationale, experiment design justification, quantitative results, qualitative observations
 2. Traces document hypothesis evolution showing how critic feedback improved proposals
 3. Traces include failure analysis: why certain hypotheses didn't lead to vulnerabilities
-4. Dual format: JSON (machine-readable) saved to `outputs/attack_traces/trace_{run_id}.json` + Markdown (human-readable) saved to `outputs/attack_traces/trace_{run_id}.md`
+4. Dual format: JSON (machine-readable) saved to `aust/outputs/attack_traces/trace_{run_id}.json` + Markdown (human-readable) saved to `aust/outputs/attack_traces/trace_{run_id}.md`
 5. Reporter can parse and extract key sections from traces for Results and Discussion sections
 
 ### Story 4.4: Judge Persona Definitions
@@ -653,7 +653,7 @@ so that **the judging system provides diverse, meaningful perspectives**.
 
 #### Acceptance Criteria
 
-1. Judge persona definitions created in `configs/judge_personas.yaml` with 3-5 personas:
+1. Judge persona definitions created in `aust/configs/personas/judge_personas.yaml` with 3-5 personas:
    - Security Expert: evaluates practical exploitability, real-world attack feasibility
    - ML Researcher: evaluates novelty, methodological rigor, scientific contribution
    - Privacy Advocate: evaluates privacy implications, compliance relevance
@@ -670,12 +670,12 @@ so that **the system provides multi-faceted evaluation of findings**.
 
 #### Acceptance Criteria
 
-1. Judge agent implemented in `agents/judge.py` that can instantiate any persona from `judge_personas.yaml`
+1. Judge agent implemented in `aust/src/agents/judge.py` that can instantiate any persona from `aust/configs/personas/judge_personas.yaml`
 2. Judge accepts inputs: generated report, attack traces, experiment results
 3. Judge generates structured evaluation: summary assessment, strengths, weaknesses, scoring (per persona's dimensions), recommendations
-4. Each judge evaluation saved to `outputs/judgments/judge_{persona_name}_{run_id}.md`
+4. Each judge evaluation saved to `aust/outputs/judgments/judge_{persona_name}_{run_id}.md`
 5. Judges run independently (can be parallelized if time permits)
-6. All judge outputs aggregated into `outputs/judgments/summary_{run_id}.md`
+6. All judge outputs aggregated into `aust/outputs/judgments/summary_{run_id}.md`
 
 ### Story 4.6: Outer Loop Orchestrator
 
@@ -685,12 +685,12 @@ so that **the system automatically generates and evaluates reports after vulnera
 
 #### Acceptance Criteria
 
-1. Outer Loop Orchestrator implemented in `loop/outer_loop.py`
+1. Outer Loop Orchestrator implemented in `aust/src/loop/outer_loop.py`
 2. Orchestrator triggered when inner loop exits with VULNERABILITY_FOUND or max iterations
 3. Orchestrator workflow: call Reporter → wait for report generation → call all Judges → aggregate judgments
 4. Orchestrator logs all outputs and timestamps for reproducibility
-5. Default outer loop iteration budget is 5; configurable via `configs/loop_config.yaml`
-6. Final output package saved to `outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary
+5. Default outer loop iteration budget is 5; configurable via `aust/configs/loop_config.yaml`
+6. Final output package saved to `aust/outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary
 
 ### Story 4.7: End-to-End Full System Test
 
@@ -725,4 +725,3 @@ Focus on:
 - Performance optimization for meeting NFR6-NFR8 targets
 
 Start in architecture creation mode and use both the PRD and Project Brief as your foundation.
-

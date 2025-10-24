@@ -21,7 +21,7 @@ The following data models represent the core business entities and data structur
 - Has many `IterationResult` (one per iteration)
 - Has one `AttackTrace` (aggregated from all iterations)
 
-**Persistence:** Serialized to JSON at `outputs/{task_id}/loop_state.json`, saved after each state transition.
+**Persistence:** Serialized to JSON at `aust/outputs/{task_id}/loop_state.json`, saved after each state transition.
 
 ## IterationResult
 
@@ -44,7 +44,7 @@ The following data models represent the core business entities and data structur
 - Belongs to one `LoopState`
 - Contains one `Hypothesis`, multiple `RetrievedPaper`, one `ExperimentResult`, one `Evaluation`
 
-**Persistence:** Stored in `AttackTrace` (aggregated) and in `outputs/{task_id}/iterations/iteration_{n}.json` for debugging.
+**Persistence:** Stored in `AttackTrace` (aggregated) and in `aust/outputs/{task_id}/iterations/iteration_{n}.json` for debugging.
 
 ## Hypothesis
 
@@ -104,7 +104,7 @@ The following data models represent the core business entities and data structur
 **Relationships:**
 - Belongs to one `IterationResult`
 
-**Persistence:** Embedded in `IterationResult` JSON; large artifacts (model checkpoints, images) stored in `outputs/{task_id}/experiments/{experiment_id}/`.
+**Persistence:** Embedded in `IterationResult` JSON; large artifacts (model checkpoints, images) stored in `aust/outputs/{task_id}/experiments/{experiment_id}/`.
 
 ## Evaluation
 
@@ -144,7 +144,7 @@ The following data models represent the core business entities and data structur
 - Belongs to one `LoopState`
 - Aggregates information from multiple `IterationResult`
 
-**Persistence:** Dual format - JSON at `outputs/{task_id}/attack_trace.json` and Markdown at `outputs/{task_id}/attack_trace.md`.
+**Persistence:** Dual format - JSON at `aust/outputs/{task_id}/attack_trace.json` and Markdown at `aust/outputs/{task_id}/attack_trace.md`.
 
 ## TraceStep
 
@@ -182,7 +182,7 @@ The following data models represent the core business entities and data structur
 - References multiple `RetrievedPaper` (for citations)
 - Has many `JudgeEvaluation` (3-5 judges)
 
-**Persistence:** Markdown at `outputs/{task_id}/report.md`, LaTeX at `outputs/{task_id}/report.tex` (optional).
+**Persistence:** Markdown at `aust/outputs/{task_id}/report.md`, LaTeX at `aust/outputs/{task_id}/report.tex` (optional).
 
 ## JudgeEvaluation
 
@@ -202,7 +202,7 @@ The following data models represent the core business entities and data structur
 **Relationships:**
 - Belongs to one `Report`
 
-**Persistence:** JSON at `outputs/{task_id}/judges/judge_{persona}.json`.
+**Persistence:** JSON at `aust/outputs/{task_id}/judges/judge_{persona}.json`.
 
 ## AgentPromptConfig
 

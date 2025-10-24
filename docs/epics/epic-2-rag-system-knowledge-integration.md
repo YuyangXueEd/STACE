@@ -32,7 +32,7 @@ so that **the system retrieves relevant papers automatically**.
 1. Query Generator agent implemented in `agents/query_generator.py`
 2. Agent accepts inputs: current hypothesis (if any), evaluation feedback, task type (data-based or concept-erasure)
 3. Agent generates 1-3 search queries focusing on: attack methods, unlearning vulnerabilities, relevant evaluation metrics
-4. Queries are logged to `outputs/queries/` with timestamp
+4. Queries are logged to `aust/outputs/queries/` with timestamp
 5. Query Generator calls RAG search interface and returns top-5 relevant paper chunks per query
 
 ## Story 2.4: Enhance Hypothesis Generator with RAG
@@ -61,7 +61,7 @@ so that **the system learns from past successes across multiple runs**.
 2. Successful experiments (VULNERABILITY_FOUND) are stored with: hypothesis, experiment parameters, results, attack trace reference
 3. Memory retrieval interface: `get_successful_attacks(task_type)` returns past successful attacks for given task
 4. Hypothesis Generator queries memory at start of each run to inform initial hypothesis generation
-5. Memory persisted to `outputs/memory_store/` (survives container restarts per NFR14)
+5. Memory persisted to `aust/outputs/memory_store/` (survives container restarts per NFR14)
 6. Successful memories are exported into the Qdrant collection as section="experience" for future retrieval
 
 ## Story 2.6: RAG-Enhanced End-to-End Test

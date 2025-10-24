@@ -300,7 +300,7 @@ If time permits after MVP completion (between Nov 7-14), consider these enhancem
 ### Technology Preferences
 
 **Agent Components:**
-- **LLM/VLM Backend**: OpenRouter API for flexible model access (GPT-4o, Claude 3.5 Sonnet, and other options)
+- **LLM/VLM Backend**: OpenRouter API for flexible model access (GPT-5, Claude 3.5 Sonnet, and other options)
 - **Multi-Modal Support**: VLM capabilities via OpenRouter for generation-based evaluation
 
 **Unlearning Infrastructure:**
@@ -320,22 +320,26 @@ If time permits after MVP completion (between Nov 7-14), consider these enhancem
 **Repository Structure:**
 ```
 aust/
-├── agents/              # Hypothesis Generator, Critic, Query Generator, Evaluator, Reporter, Judges
-├── tools/               # MCP FunctionTool wrappers for concept-erasure methods
-├── rag/                 # Paper corpus, embedding, retrieval logic
-├── memory/              # CAMEL-AI long-term storage integration
-├── loop/                # Inner/outer loop orchestration
+├── configs/             # Prompt, task, persona, and threshold YAML
+│   ├── prompts/
+│   ├── thresholds/
+│   ├── tasks/
+│   └── personas/
+├── scripts/             # CLI entry points (inner loop runner, card generation, etc.)
+├── src/
+│   ├── agents/          # Hypothesis Generator, Critic, Query Generator, Evaluator, Reporter, Judges
+│   ├── loop/            # Inner/outer loop orchestration and state management
+│   ├── memory/          # CAMEL-AI long-term storage integration
+│   ├── rag/             # Paper corpus, embedding, retrieval logic
+│   ├── toolkits/        # Execution tool wrappers (DeepUnlearn, concept erasure, etc.)
+│   └── logging_config.py
+├── tests/               # Project-scoped unit/integration suites
 ├── outputs/             # Generated reports, attack traces, judge evaluations
-├── configs/             # Agent prompts, evaluation thresholds, system parameters
 ├── experiments/         # Experiment execution sandbox
-├── submodules/
-│   └── DeepUnlearn/     # Git submodule for data-based unlearning
-├── external/
-│   └── camel/           # CAMEL-AI in dev/editable mode
-├── docker/
-│   ├── conda_Dockerfile # Conda-based container definition
-│   └── job.yaml         # Kubernetes job specification
-└── requirements.txt     # Python dependencies
+├── logs/                # Structured run logs
+├── rag_paper_db/        # Paper metadata and FAISS artifacts
+├── utils/               # Helper scripts/utilities
+└── ...
 ```
 
 **Service Architecture:**
@@ -488,4 +492,3 @@ This Project Brief documents the complete vision, scope, and implementation plan
 - Timeline discipline (3-week sprint, no major pivots after Nov 7)
 
 With the brainstorming session results and this project brief, you now have comprehensive documentation to guide AUST development from concept to completion.
-

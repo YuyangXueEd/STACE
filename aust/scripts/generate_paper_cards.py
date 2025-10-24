@@ -18,15 +18,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 DEFAULT_TEXT_CONFIG = (
-    PROJECT_ROOT / "aust" / "src" / "configs" / "prompts" / "paper_card_extraction.yaml"
+    PROJECT_ROOT / "aust" / "configs" / "prompts" / "paper_card_extraction.yaml"
 )
 DEFAULT_PDF_CONFIG = (
-    PROJECT_ROOT / "aust" / "src" / "configs" / "prompts" / "paper_card_pdf_extraction.yaml"
+    PROJECT_ROOT / "aust" / "configs" / "prompts" / "paper_card_pdf_extraction.yaml"
 )
 
 from aust.src.agents.paper_card_agent import PaperCardAgent
 from aust.src.agents.paper_card_pdf_agent import PaperCardPdfAgent
-from aust.src.logging_config import setup_logging, get_logger
+from aust.src.utils.logging_config import setup_logging, get_logger
 
 # Setup logging
 setup_logging(

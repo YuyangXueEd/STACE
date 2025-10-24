@@ -1,0 +1,171 @@
+# Seed Hypothesis Templates for Data-Based Unlearning Attacks
+#
+# These templates provide starting points for hypothesis generation in early iterations.
+# The Hypothesis Generator uses these as inspiration (not rigid constraints) to create
+# novel, testable vulnerability hypotheses.
+#
+# Each template includes:
+# - attack_type: Category of attack
+# - description_template: General attack methodology
+# - target_template: What the attack aims to extract/detect
+# - parameter_ranges: Typical hyperparameter ranges
+# - expected_outcome_template: What success looks like
+# - metadata: Difficulty, resources, typical success rates
+
+task_type: data_based_unlearning
+
+seed_templates:
+  - id: membership_inference
+    attack_type: membership_inference
+    description_template: >
+      Train a binary classifier to distinguish between data points that were in the
+      original training set versus those that were "forgotten" through the unlearning
+      process. The attack exploits subtle differences in model behavior (e.g., confidence
+      scores, prediction margins) to infer membership.
+
+    target_template: >
+      Determine whether specific data points from the "forget set" can be correctly
+      identified as having been in the original training set, despite the unlearning process.
+
+    parameter_ranges:
+      num_shadow_models: [5, 10, 20]
+      confidence_threshold: [0.5, 0.7, 0.9]
+      attack_model: ["logistic_regression", "random_forest", "mlp"]
+      feature_type: ["prediction_scores", "gradients", "loss_values"]
+
+    expected_outcome_template: >
+      Membership inference accuracy significantly above random chance (>65% for balanced
+      datasets). Success indicates that the unlearning method fails to remove membership
+      signals from the model.
+
+    metadata:
+      difficulty: medium
+      required_resources: ["shadow_models", "forget_set", "retain_set"]
+      typical_success_rate: 0.6
+      computation_cost: medium
+
+  - id: model_inversion
+    attack_type: model_inversion
+    description_template: >
+      Reconstruct sensitive features or data samples from the "forgotten" dataset by
+      optimizing inputs to match the model's output distribution. This attack aims to
+      recover information that should have been erased by the unlearning process.
+
+    target_template: >
+      Reconstruct training data samples from the forget set by querying the unlearned
+      model and optimizing input features to match expected outputs.
+
+    parameter_ranges:
+      optimization_steps: [100, 500, 1000]
+      learning_rate: [0.001, 0.01, 0.1]
+      regularization: [0.0, 0.01, 0.1]
+      initialization: ["random", "gaussian_noise", "prototype"]
+
+    expected_outcome_template: >
+      Reconstructed samples show high similarity (e.g., SSIM >0.5 for images, cosine
+      similarity >0.7 for embeddings) to original forgotten data. Success indicates
+      residual information leakage despite unlearning.
+
+    metadata:
+      difficulty: high
+      required_resources: ["model_gradients", "label_information", "optimization_framework"]
+      typical_success_rate: 0.4
+      computation_cost: high
+
+  - id: data_extraction
+    attack_type: data_extraction
+    description_template: >
+      Extract verbatim or near-verbatim samples from the forget set by analyzing model
+      outputs, intermediate activations, or through carefully crafted queries. This is
+      particularly relevant for language models or models with high capacity.
+
+    target_template: >
+      Extract specific data points from the forget set by querying the model with
+      related inputs and analyzing the outputs or internal representations.
+
+    parameter_ranges:
+      query_budget: [100, 500, 1000]
+      similarity_metric: ["cosine", "euclidean", "edit_distance"]
+      extraction_method: ["activation_matching", "output_decoding", "gradient_analysis"]
+
+    expected_outcome_template: >
+      Successfully extract >10% of forget set samples with >0.8 similarity to originals.
+      For text, measure exact or near-exact match rate. Success indicates incomplete
+      data removal.
+
+    metadata:
+      difficulty: high
+      required_resources: ["model_access", "query_budget", "similarity_metrics"]
+      typical_success_rate: 0.3
+      computation_cost: medium
+
+  - id: attribute_inference
+    attack_type: attribute_inference
+    description_template: >
+      Infer sensitive attributes of data points in the forget set that should have been
+      erased. The attack exploits correlations in the model's learned representations to
+      predict protected attributes even after unlearning.
+
+    target_template: >
+      Predict sensitive attributes (e.g., demographics, labels) of forgotten data points
+      by analyzing model behavior on related inputs.
+
+    parameter_ranges:
+      attribute_type: ["binary", "categorical", "continuous"]
+      inference_model: ["logistic_regression", "decision_tree", "neural_network"]
+      feature_source: ["predictions", "embeddings", "attention_weights"]
+
+    expected_outcome_template: >
+      Attribute inference accuracy >0.7 for categorical attributes or R² >0.5 for
+      continuous attributes. Significantly better than random baseline indicates
+      attribute leakage.
+
+    metadata:
+      difficulty: medium
+      required_resources: ["model_outputs", "partial_attribute_info", "inference_model"]
+      typical_success_rate: 0.55
+      computation_cost: low
+
+  - id: dataset_reconstruction
+    attack_type: dataset_reconstruction
+    description_template: >
+      Reconstruct a substantial portion of the forget set by combining multiple attack
+      vectors (membership inference, model inversion, attribute inference). Aims for
+      large-scale data recovery rather than individual samples.
+
+    target_template: >
+      Reconstruct a statistically significant portion (>20%) of the forget dataset with
+      sufficient fidelity to identify original samples or their key characteristics.
+
+    parameter_ranges:
+      reconstruction_method: ["iterative_optimization", "gan_inversion", "sampling_attack"]
+      fidelity_threshold: [0.5, 0.7, 0.9]
+      coverage_target: [0.1, 0.2, 0.5]
+
+    expected_outcome_template: >
+      Reconstruct >20% of forget set with average similarity >0.6. Measure using SSIM,
+      PSNR for images or perplexity, BLEU for text. Success demonstrates systematic
+      unlearning failure.
+
+    metadata:
+      difficulty: very_high
+      required_resources: ["comprehensive_model_access", "high_compute", "multiple_attack_tools"]
+      typical_success_rate: 0.25
+      computation_cost: very_high
+
+# Template Selection Strategy
+template_selection:
+  # For iteration 1: Use round-robin or random selection
+  iteration_1: "random"
+
+
+# Metadata for Task Configuration
+metadata:
+  last_updated: "2025-10-21"
+  version: "1.0"
+  total_templates: 5
+  description: >
+    Seed templates for data-based unlearning vulnerability testing. These templates
+    cover the main categories of attacks against machine unlearning methods:
+    membership inference, model inversion, data extraction, attribute inference,
+    and dataset reconstruction.

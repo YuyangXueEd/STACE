@@ -67,6 +67,7 @@ transformers
 accelerate
 huggingface_hub[cli]
 sentencepiece
+rouge
 
 # Data Science
 jupyterlab
@@ -98,3 +99,4 @@ testcontainers
 # Logging
 python-json-logger
 rich
+agentops

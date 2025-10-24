@@ -8,7 +8,7 @@ from camel.agents import ChatAgent
 from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 
-from aust.src.logging_config import setup_logging, get_logger
+from aust.src.utils.logging_config import setup_logging, get_logger
 
 # Setup logging using CAUST framework
 setup_logging(log_level="INFO", log_dir=Path("aust/logs"), enable_console=True, enable_file=True)

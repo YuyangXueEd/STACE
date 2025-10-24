@@ -12,7 +12,7 @@ flowchart TB
         Input[User provides:<br/>- Model details<br/>- Unlearned concept<br/>- Optional method] --> Parser[Task Parser]
         Parser --> Validate{Valid input?}
         Validate -->|No| Error[Return error message]
-        Validate -->|Yes| TaskSpec[Create TaskSpec]
+        Validate -->|Yes| TaskSpec[Create & Persist<br/>TaskSpec.json]
         Error --> End1([End])
     end
 
@@ -28,17 +28,17 @@ flowchart TB
             direction TB
             subgraph MicroLoop[2-Round Micro-Loop Minimum]
                 direction TB
-                Round1Start[Round 1] --> HG1[Hypothesis Generator:<br/>Generate naive hypothesis<br/>from template]
+                Round1Start[Round 1] --> HG1[Hypothesis Generator:<br/>TaskSpec + seed template<br/>(iteration 1)]
                 HG1 --> Critic1[Critic Agent:<br/>Challenge hypothesis]
                 Critic1 --> QG1[Query Generator:<br/>Transform hypothesis+feedback<br/>into RAG queries]
                 QG1 --> RAG1[RAG System:<br/>Retrieve relevant papers<br/>from Qdrant]
-                RAG1 --> Refine1[Hypothesis Generator:<br/>Refine hypothesis with<br/>papers + feedback]
+                RAG1 --> Refine1[Hypothesis Generator:<br/>Incorporate RAG papers<br/>and critic guidance]
 
                 Refine1 --> Round2Start[Round 2]
                 Round2Start --> Critic2[Critic Agent:<br/>Validate refined hypothesis]
                 Critic2 --> QG2[Query Generator:<br/>Additional RAG queries<br/>if needed]
                 QG2 --> RAG2[RAG System:<br/>Retrieve more papers]
-                RAG2 --> Refine2[Hypothesis Generator:<br/>Final refinement]
+                RAG2 --> Refine2[Hypothesis Generator:<br/>Final refinement with<br/>critic suggestions]
             end
             Refine2 --> FinalHyp[Final Refined Hypothesis]
         end

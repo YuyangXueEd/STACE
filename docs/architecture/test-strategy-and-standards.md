@@ -89,8 +89,8 @@ def test_full_inner_loop_discovers_vulnerability(staging_env):
     
     # Assert: Attack trace generated, vulnerability found (or max iterations reached)
     assert result["status"] in ["vulnerability_found", "max_iterations_reached"]
-    assert os.path.exists(f"outputs/{task_id}/attack_trace.md")
-    assert os.path.exists(f"outputs/{task_id}/report.md")
+    assert os.path.exists(f"aust/outputs/{task_id}/attack_trace.md")
+    assert os.path.exists(f"aust/outputs/{task_id}/report.md")
 ```
 
 ## Test Data Management

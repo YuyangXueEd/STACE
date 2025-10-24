@@ -20,7 +20,7 @@ from PIL import Image
 from torchmetrics.image.fid import FrechetInceptionDistance
 from transformers import CLIPModel, CLIPProcessor, GPT2LMHeadModel, GPT2Tokenizer
 
-from aust.src.logging_config import get_logger
+from aust.src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 

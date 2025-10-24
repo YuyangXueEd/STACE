@@ -40,7 +40,7 @@
 
 **NFR3**: The system shall integrate DeepUnlearn as a git submodule for version control and local modifications.
 
-**NFR4**: The system shall use OpenRouter API for LLM/VLM access supporting multiple models (GPT-4o, Claude 3.5 Sonnet, etc.).
+**NFR4**: The system shall use OpenRouter API for LLM/VLM access supporting multiple models (GPT-5, Claude 3.5 Sonnet, etc.).
 
 **NFR5**: The system shall use Python 3.11+ as the primary implementation language.
 

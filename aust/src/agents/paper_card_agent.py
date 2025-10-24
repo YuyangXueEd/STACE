@@ -8,6 +8,7 @@ import os
 import re
 import json
 import yaml
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
@@ -18,7 +19,20 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 from camel.loaders import UnstructuredIO, create_file_from_raw_bytes
 
-from aust.src.logging_config import setup_logging, get_logger
+from aust.src.utils.logging_config import setup_logging, get_logger
+from aust.src.utils.model_config import load_model_settings
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "configs" / "prompts" / "paper_card_extraction.yaml"
+
+_PAPER_CARD_MODEL_FALLBACK = {
+    "model_name": "openai/gpt-5-nano",
+    "config": {
+        "temperature": 0.3,
+        "max_tokens": 4000,
+        "top_p": 0.9,
+    },
+}
 
 # Setup logging
 setup_logging(
@@ -46,15 +60,15 @@ class PaperCardAgent:
             temperature: Override temperature from config
         """
         if config_path is None:
-            self.config_path = (
-                Path(__file__).resolve().parent.parent
-                / "configs"
-                / "prompts"
-                / "paper_card_extraction.yaml"
-            )
+            self.config_path = DEFAULT_CONFIG_PATH
         else:
-            self.config_path = Path(config_path)
+            provided_path = Path(config_path)
+            if not provided_path.is_absolute():
+                provided_path = provided_path.resolve()
+            self.config_path = provided_path
         self.config = self._load_config()
+
+        model_settings = load_model_settings("paper_card_agent", _PAPER_CARD_MODEL_FALLBACK, logger=logger)
 
         # Override config with parameters if provided
         if model:
@@ -62,18 +76,25 @@ class PaperCardAgent:
         if temperature is not None:
             self.config["temperature"] = temperature
 
+        # Apply model defaults when not explicitly configured
+        self.config.setdefault("model", model_settings["model_name"])
+        for key, value in model_settings.get("config", {}).items():
+            self.config.setdefault(key, value)
+
         logger.info(f"Initializing PaperCardAgent with model: {self.config['model']}")
 
         # Create CAMEL model
+        model_config = {
+            key: self.config.get(key)
+            for key in ("temperature", "max_tokens", "top_p")
+            if self.config.get(key) is not None
+        }
         self.model = ModelFactory.create(
             model_platform=ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
             model_type=self.config["model"],
             url="https://openrouter.ai/api/v1",
             api_key=os.getenv("OPENROUTER_API_KEY"),
-            model_config_dict={
-                "temperature": self.config.get("temperature", 0.3),
-                "max_tokens": self.config.get("max_tokens", 4000),
-            },
+            model_config_dict=model_config,
         )
 
         # Create ChatAgent
@@ -424,7 +445,7 @@ def main():
     """Example usage of Paper Card Agent."""
     # Initialize agent
     agent = PaperCardAgent(
-        config_path="configs/prompts/paper_card_extraction.yaml",
+        config_path=DEFAULT_CONFIG_PATH,
         model="openai/gpt-5-nano",
     )
 

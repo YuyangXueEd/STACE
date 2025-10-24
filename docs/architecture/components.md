@@ -1,6 +1,6 @@
 # Components
 
-AUST is structured into logical components with clear responsibilities and interfaces. The architecture follows the repository structure from the PRD (monorepo with agents/, tools/, rag/, memory/, loop/, outputs/, configs/ directories).
+AUST is structured into logical components with clear responsibilities and interfaces. The architecture follows the repository structure from the PRD (monorepo with aust/src/agents, aust/src/toolkits, aust/src/rag, aust/src/memory, aust/src/loop, aust/outputs, aust/configs directories).
 
 ## Inner Loop Orchestrator
 
@@ -254,7 +254,7 @@ AUST is structured into logical components with clear responsibilities and inter
 
 **Technology Stack:** Python 3.11, JSON, file I/O
 
-**Implementation Notes:** Implements Repository pattern. File-based storage: outputs/{task_id}/loop_state.json on persistent volume. Atomic writes (write to temp file, then rename) to prevent corruption. Future migration to database (PostgreSQL, MongoDB) possible without changing interface.
+**Implementation Notes:** Implements Repository pattern. File-based storage: aust/outputs/{task_id}/loop_state.json on persistent volume. Atomic writes (write to temp file, then rename) to prevent corruption. Future migration to database (PostgreSQL, MongoDB) possible without changing interface.
 
 ## Attack Trace Repository
 
@@ -271,7 +271,7 @@ AUST is structured into logical components with clear responsibilities and inter
 
 **Technology Stack:** Python 3.11, Jinja2 (for Markdown templating), JSON
 
-**Implementation Notes:** Implements Repository pattern. Aggregates iteration results into human-readable narrative. Dual-format output: JSON (outputs/{task_id}/attack_trace.json) for machine parsing, Markdown (outputs/{task_id}/attack_trace.md) for paper integration and user reproduction. Markdown format prioritizes readability per NFR9 (80%+ reproducibility).
+**Implementation Notes:** Implements Repository pattern. Aggregates iteration results into human-readable narrative. Dual-format output: JSON (aust/outputs/{task_id}/attack_trace.json) for machine parsing, Markdown (aust/outputs/{task_id}/attack_trace.md) for paper integration and user reproduction. Markdown format prioritizes readability per NFR9 (80%+ reproducibility).
 
 ## Configuration Manager
 

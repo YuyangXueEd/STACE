@@ -14,7 +14,7 @@ so that **the system produces publication-ready reports automatically**.
 2. Report template defined in `configs/report_template.md` with sections: Introduction, Methods, Experiments, Results, Discussion, Conclusion
 3. Reporter accepts inputs: attack traces (all iterations), successful experiments, evaluation results, retrieved paper references
 4. Reporter generates section outlines based on inputs (e.g., Methods describes hypothesis generation + experiment execution workflow)
-5. Generated report saved to `outputs/reports/report_{run_id}.md` in Markdown format
+5. Generated report saved to `aust/outputs/reports/report_{run_id}.md` in Markdown format
 6. Report includes metadata: date, task type, target unlearning method, number of iterations
 
 ## Story 4.2: Reporter Agent - Content Generation with Citations
@@ -44,7 +44,7 @@ so that **the Reporter can use traces as primary evidence**.
 1. Attack trace format enhanced to include: iteration number, hypothesis rationale, experiment design justification, quantitative results, qualitative observations
 2. Traces document hypothesis evolution showing how critic feedback improved proposals
 3. Traces include failure analysis: why certain hypotheses didn't lead to vulnerabilities
-4. Dual format: JSON (machine-readable) saved to `outputs/attack_traces/trace_{run_id}.json` + Markdown (human-readable) saved to `outputs/attack_traces/trace_{run_id}.md`
+4. Dual format: JSON (machine-readable) saved to `aust/outputs/attack_traces/trace_{run_id}.json` + Markdown (human-readable) saved to `aust/outputs/attack_traces/trace_{run_id}.md`
 5. Reporter can parse and extract key sections from traces for Results and Discussion sections
 
 ## Story 4.4: Judge Persona Definitions
@@ -75,9 +75,9 @@ so that **the system provides multi-faceted evaluation of findings**.
 1. Judge agent implemented in `agents/judge.py` that can instantiate any persona from `judge_personas.yaml`
 2. Judge accepts inputs: generated report, attack traces, experiment results
 3. Judge generates structured evaluation: summary assessment, strengths, weaknesses, scoring (per persona's dimensions), recommendations
-4. Each judge evaluation saved to `outputs/judgments/judge_{persona_name}_{run_id}.md`
+4. Each judge evaluation saved to `aust/outputs/judgments/judge_{persona_name}_{run_id}.md`
 5. Judges run independently (can be parallelized if time permits)
-6. All judge outputs aggregated into `outputs/judgments/summary_{run_id}.md`
+6. All judge outputs aggregated into `aust/outputs/judgments/summary_{run_id}.md`
 
 ## Story 4.6: Outer Loop Orchestrator
 
@@ -92,7 +92,7 @@ so that **the system automatically generates and evaluates reports after vulnera
 3. Orchestrator workflow: call Reporter → wait for report generation → call all Judges → aggregate judgments
 4. Orchestrator logs all outputs and timestamps for reproducibility
 5. Default outer loop iteration budget is 5 (configurable via `configs/loop_config.yaml`); see Story 4.6
-6. Final output package saved to `outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary
+6. Final output package saved to `aust/outputs/final_{run_id}/` containing: report, attack traces (JSON + MD), all judge evaluations, aggregated summary
 
 ## Story 4.7: End-to-End Full System Test
 

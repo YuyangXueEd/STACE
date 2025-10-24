@@ -18,7 +18,7 @@ The technology stack selections below are the **single source of truth** for AUS
 | **Language** | Python | 3.11.5 | Primary development language | Required by CAMEL-AI and DeepUnlearn; excellent ML/AI library ecosystem; team expertise |
 | **Runtime** | Python | 3.11.5 | Application runtime | LTS Python version with modern features (match groups, better error messages) |
 | **Agent Framework** | CAMEL-AI | dev/editable (latest main) | Multi-agent orchestration | Provides agent abstractions, memory system (FR10), and role-based agents; dev mode enables customization per PRD requirement |
-| **LLM/VLM API** | OpenRouter | N/A (API service) | LLM/VLM access for agents | Supports multiple models (GPT-4o, Claude 3.5, GPT-4V) for flexibility; single API reduces integration complexity; per PRD NFR4 |
+| **LLM/VLM API** | OpenRouter | N/A (API service) | LLM/VLM access for agents | Supports multiple models (GPT-5, Claude 3.5, GPT-4V) for flexibility; single API reduces integration complexity; per PRD NFR4 |
 | **Containerization** | Docker | 24.0.7 | Application containerization | Provides reproducibility (NFR11), container isolation (NFR12), and supports Kubernetes deployment |
 | **Orchestration** | Kubernetes | 1.28.x | Container orchestration and GPU management | Enables H200 GPU job scheduling (NFR1), persistent volumes (NFR14), and resource limits; production-grade resilience |
 | **ML Library** | PyTorch | 2.8.0 | Deep learning framework | Required by DeepUnlearn and concept-erasure methods; CUDA support for H200 GPUs |
@@ -32,6 +32,7 @@ The technology stack selections below are the **single source of truth** for AUS
 | **Container Testing** | Testcontainers Python | 3.7.1 | Integration testing with containers | Enables testing with real FAISS, file system isolation; validates deployment configuration |
 | **Git Submodule** | DeepUnlearn | commit SHA pinned | Data-based unlearning experiments | Provides unlearning method implementations per FR6; git submodule enables version control and local modifications |
 | **Git Submodule** | Concept-Erasure Tools | TBD (specific repo to be selected) | Concept-erasure experiments | Provides concept-erasure implementations per FR7; specific tool to be selected in Epic 3 |
+| **Reference Library** | Hugging Face Diffusers | main (commit 9c3b58d) | Diffusion model reference implementation | Full source code reference for SD/SDXL/Flux integration; used by coding/refinement agents for pattern learning; supports Story 1.6/1.6a concept erasure implementation |
 | **Dependency Management** | pip | 23.3.1 | Package installation | Standard Python package manager; requirements.txt with pinned versions (NFR11) |
 | **IaC (if needed)** | Kubernetes YAML | N/A | Infrastructure as code | Native Kubernetes manifests (job.yaml, pvc.yaml); simple, version-controlled; no additional IaC tool needed for MVP |
 

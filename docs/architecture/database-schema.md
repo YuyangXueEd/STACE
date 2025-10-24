@@ -5,7 +5,7 @@ AUST uses **file-based storage** with JSON serialization for MVP simplicity and 
 ## File-Based Storage Structure
 
 ```
-outputs/
+aust/outputs/
 └── {task_id}/
     ├── loop_state.json                    # LoopState model
     ├── attack_trace.json                  # AttackTrace model (JSON)
@@ -27,7 +27,7 @@ outputs/
         ├── judge_ml_researcher.json
         └── ...
 
-rag/
+aust/src/rag/
 ├── papers/
 │   ├── data_unlearning/
 │   │   ├── paper1.pdf

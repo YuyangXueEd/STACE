@@ -14,6 +14,7 @@ import yaml
 import shutil
 import subprocess
 import tempfile
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -21,7 +22,22 @@ from typing import Any, Dict, List, Optional
 import requests
 from dotenv import load_dotenv
 
-from aust.src.logging_config import setup_logging, get_logger
+from aust.src.utils.logging_config import setup_logging, get_logger
+from aust.src.utils.model_config import load_model_settings
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "configs" / "prompts" / "paper_card_pdf_extraction.yaml"
+DEFAULT_FALLBACK_CONFIG = PACKAGE_ROOT / "configs" / "prompts" / "paper_card_extraction.yaml"
+
+_PAPER_CARD_PDF_MODEL_FALLBACK = {
+    "model_name": "openai/gpt-5-nano",
+    "config": {
+        "temperature": 0.3,
+        "max_tokens": 4000,
+        "top_p": 0.9,
+    },
+}
 
 load_dotenv()
 
@@ -45,20 +61,23 @@ class PaperCardPdfAgent:
         temperature: Optional[float] = None,
     ):
         if config_path is None:
-            self.config_path = (
-                Path(__file__).resolve().parent.parent
-                / "configs"
-                / "prompts"
-                / "paper_card_pdf_extraction.yaml"
-            )
+            self.config_path = DEFAULT_CONFIG_PATH
         else:
-            self.config_path = Path(config_path)
+            provided_path = Path(config_path)
+            if not provided_path.is_absolute():
+                provided_path = provided_path.resolve()
+            self.config_path = provided_path
         self.config = self._load_config()
+        model_settings = load_model_settings("paper_card_pdf_agent", _PAPER_CARD_PDF_MODEL_FALLBACK, logger=logger)
 
         if model:
             self.config["model"] = model
         if temperature is not None:
             self.config["temperature"] = temperature
+
+        self.config.setdefault("model", model_settings["model_name"])
+        for key, value in model_settings.get("config", {}).items():
+            self.config.setdefault(key, value)
 
         api_key = os.getenv("OPENROUTER_API_KEY")
         if not api_key:
@@ -73,9 +92,21 @@ class PaperCardPdfAgent:
         self.chat_completions_url = f"{self.base_url}/chat/completions"
         self.default_headers = self._default_headers()
         self.max_upload_bytes = int(self.config.get("max_upload_bytes", 20_000_000))
-        self.fallback_config_path = self.config.get(
-            "fallback_text_config", "configs/prompts/paper_card_extraction.yaml"
-        )
+        fallback_config_value = self.config.get("fallback_text_config")
+        if fallback_config_value:
+            fallback_path = Path(fallback_config_value)
+            if not fallback_path.is_absolute():
+                project_candidate = (PROJECT_ROOT / fallback_path).resolve()
+                package_candidate = (PACKAGE_ROOT / fallback_path).resolve()
+                if project_candidate.exists():
+                    fallback_path = project_candidate
+                elif package_candidate.exists():
+                    fallback_path = package_candidate
+                else:
+                    fallback_path = project_candidate
+            self.fallback_config_path = fallback_path
+        else:
+            self.fallback_config_path = DEFAULT_FALLBACK_CONFIG
         self.pdf_compression_config = self.config.get("pdf_compression", {})
         self._fallback_agent = None
 

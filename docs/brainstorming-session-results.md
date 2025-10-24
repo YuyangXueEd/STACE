@@ -124,7 +124,7 @@
    - Method Cards: Principles, Assumptions, Variables/Hyperparameters, Original text anchors
    - Experiment Cards: Dataset/Task, Controls/Ablations, Metrics, Threat Model, Findings, Figure summaries, Text anchors
 6. **Dual Storage Format**: JSON for indexing/search + Markdown for human debugging
-7. **Multimodal Paper Understanding**: Use GPT-4o/Claude 3.5 to read text + figures natively
+7. **Multimodal Paper Understanding**: Use GPT-5/Claude 3.5 to read text + figures natively
 8. **Section Whitelisting/Blacklisting**:
    - Whitelist: Abstract, Intro (task/threat only), Method, Experiments, Results, Ablation, Limitations
    - Blacklist: Related Work (2-3 sentences only), Appendix (abstract only)
@@ -270,7 +270,7 @@
 *Ideas requiring development/research*
 
 1. **LLM-Based Paper Indexing with Structured Cards**
-   - Description: Multimodal LLM (GPT-4o/Claude 3.5) extracts Method + Experiment cards in JSON/MD format
+   - Description: Multimodal LLM (GPT-5/Claude 3.5) extracts Method + Experiment cards in JSON/MD format
    - Development needed: Card schema design, extraction prompts, quality validation pipeline
    - Timeline estimate: Week 2-3 or post-paper
 

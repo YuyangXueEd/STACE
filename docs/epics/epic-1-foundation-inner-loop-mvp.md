@@ -16,7 +16,7 @@ so that **the team has a working development environment ready for agent impleme
 
 ### Acceptance Criteria
 
-1. Repository at https://github.com/vios-s/CAUST is initialized with directory structure: `agents/`, `tools/`, `rag/`, `memory/`, `loop/`, `outputs/`, `configs/`, `experiments/`, `submodules/`, `external/`, `docker/`
+1. Repository at https://github.com/vios-s/CAUST is initialized with directory structure: `aust/src/agents`, `aust/src/toolkits`, `aust/src/rag`, `aust/src/memory`, `aust/src/loop`, `aust/outputs`, `aust/configs`, `aust/experiments`, `external/`, `docker/`
 2. Docker conda_Dockerfile builds successfully with Python 3.11+ and core dependencies (PyTorch, CAMEL-AI requirements)
 3. Kubernetes job.yaml is configured for H200 GPU access and persistent volume mounts for outputs
 4. `requirements.txt` includes pinned versions of core dependencies (PyTorch, CAMEL-AI, OpenRouter client)
@@ -33,7 +33,7 @@ so that **we can create and modify agents as needed throughout development**.
 
 1. CAMEL-AI is cloned/installed in `external/camel/` with `pip install -e external/camel`
 2. Basic test agent (simple echo agent) successfully instantiates using CAMEL-AI's agent API
-3. OpenRouter API integration is tested with at least one model call (GPT-4o or Claude 3.5)
+3. OpenRouter API integration is tested with at least one model call (GPT-5 or Claude 3.5)
 4. Agent prompt configuration system is implemented in `configs/` directory (YAML or JSON format)
 5. Basic agent interaction logging captures all LLM API calls and responses
 
@@ -62,7 +62,7 @@ so that **the system can autonomously generate testable vulnerability hypotheses
 3. Agent generates hypothesis in structured format: attack method, target unlearning method, experiment parameters, expected outcome
 4. Seed templates (3-5 known attack patterns: membership inference, model inversion, data extraction) are pre-loaded in `configs/seed_hypotheses.yaml`
 5. For MVP, hypothesis generation uses seed templates + basic LLM variation (no RAG yet - deferred to Epic 2)
-6. Output hypothesis is logged to `outputs/hypotheses/` with timestamp
+6. Output hypothesis is logged to `aust/outputs/hypotheses/` with timestamp
 
 ## Story 1.5: Hypothesis Refinement Workforce – In Progress
 
@@ -77,7 +77,7 @@ so that **hypothesis quality improves through adversarial questioning**.
 3. Critic challenges hypothesis on: novelty (is this just repeating seed templates?), feasibility (can this be executed?), rigor (is the expected outcome testable?)
 4. Critic provides structured feedback to Hypothesis Generator: strengths, weaknesses, suggestions for improvement
 5. Hypothesis Generator incorporates critic feedback in next iteration
-6. Debate exchange (Hypothesis → Critic → Revised Hypothesis) is logged to `outputs/debates/`
+6. Debate exchange (Hypothesis → Critic → Revised Hypothesis) is logged to `aust/outputs/debates/`
 
 ## Story 1.6: Experiment Executor for Data-Based Unlearning
 
@@ -111,7 +111,7 @@ so that **the system can automatically detect when vulnerabilities are discovere
 3. Configurable threshold in `configs/evaluation_thresholds.yaml` (e.g., forget accuracy delta > 10%)
 4. Evaluator determines: VULNERABILITY_FOUND, INCONCLUSIVE, or NO_VULNERABILITY
 5. Evaluator generates structured feedback: what worked, what failed, suggestions for next hypothesis
-6. Evaluation results logged to `outputs/evaluations/` with experiment run ID reference
+6. Evaluation results logged to `aust/outputs/evaluations/` with experiment run ID reference
 
 See `docs/stories/1.7.inner-loop-orchestrator.md`.
 

@@ -170,7 +170,7 @@ The technology stack selections below are the **single source of truth** for AUS
 | **Language** | Python | 3.11.5 | Primary development language | Required by CAMEL-AI and DeepUnlearn; excellent ML/AI library ecosystem; team expertise |
 | **Runtime** | Python | 3.11.5 | Application runtime | LTS Python version with modern features (match groups, better error messages) |
 | **Agent Framework** | CAMEL-AI | dev/editable (latest main) | Multi-agent orchestration | Provides agent abstractions, memory system (FR10), and role-based agents; dev mode enables customization per PRD requirement |
-| **LLM/VLM API** | OpenRouter | N/A (API service) | LLM/VLM access for agents | Supports multiple models (GPT-4o, Claude 3.5, GPT-4V) for flexibility; single API reduces integration complexity; per PRD NFR4 |
+| **LLM/VLM API** | OpenRouter | N/A (API service) | LLM/VLM access for agents | Supports multiple models (GPT-5, Claude 3.5, GPT-4V) for flexibility; single API reduces integration complexity; per PRD NFR4 |
 | **Containerization** | Docker | 24.0.7 | Application containerization | Provides reproducibility (NFR11), container isolation (NFR12), and supports Kubernetes deployment |
 | **Orchestration** | Kubernetes | 1.28.x | Container orchestration and GPU management | Enables H200 GPU job scheduling (NFR1), persistent volumes (NFR14), and resource limits; production-grade resilience |
 | **ML Library** | PyTorch | 2.8.0 | Deep learning framework | Required by DeepUnlearn and concept-erasure methods; CUDA support for H200 GPUs |
@@ -224,7 +224,7 @@ The following data models represent the core business entities and data structur
 - Has many `IterationResult` (one per iteration)
 - Has one `AttackTrace` (aggregated from all iterations)
 
-**Persistence:** Serialized to JSON at `outputs/{task_id}/loop_state.json`, saved after each state transition.
+**Persistence:** Serialized to JSON at `aust/outputs/{task_id}/loop_state.json`, saved after each state transition.
 
 ### IterationResult
 
@@ -247,7 +247,7 @@ The following data models represent the core business entities and data structur
 - Belongs to one `LoopState`
 - Contains one `Hypothesis`, multiple `RetrievedPaper`, one `ExperimentResult`, one `Evaluation`
 
-**Persistence:** Stored in `AttackTrace` (aggregated) and in `outputs/{task_id}/iterations/iteration_{n}.json` for debugging.
+**Persistence:** Stored in `AttackTrace` (aggregated) and in `aust/outputs/{task_id}/iterations/iteration_{n}.json` for debugging.
 
 ### Hypothesis
 
@@ -307,7 +307,7 @@ The following data models represent the core business entities and data structur
 **Relationships:**
 - Belongs to one `IterationResult`
 
-**Persistence:** Embedded in `IterationResult` JSON; large artifacts (model checkpoints, images) stored in `outputs/{task_id}/experiments/{experiment_id}/`.
+**Persistence:** Embedded in `IterationResult` JSON; large artifacts (model checkpoints, images) stored in `aust/outputs/{task_id}/experiments/{experiment_id}/`.
 
 ### Evaluation
 
@@ -347,7 +347,7 @@ The following data models represent the core business entities and data structur
 - Belongs to one `LoopState`
 - Aggregates information from multiple `IterationResult`
 
-**Persistence:** Dual format - JSON at `outputs/{task_id}/attack_trace.json` and Markdown at `outputs/{task_id}/attack_trace.md`.
+**Persistence:** Dual format - JSON at `aust/outputs/{task_id}/attack_trace.json` and Markdown at `aust/outputs/{task_id}/attack_trace.md`.
 
 ### TraceStep
 
@@ -385,7 +385,7 @@ The following data models represent the core business entities and data structur
 - References multiple `RetrievedPaper` (for citations)
 - Has many `JudgeEvaluation` (3-5 judges)
 
-**Persistence:** Markdown at `outputs/{task_id}/report.md`, LaTeX at `outputs/{task_id}/report.tex` (optional).
+**Persistence:** Markdown at `aust/outputs/{task_id}/report.md`, LaTeX at `aust/outputs/{task_id}/report.tex` (optional).
 
 ### JudgeEvaluation
 
@@ -405,7 +405,7 @@ The following data models represent the core business entities and data structur
 **Relationships:**
 - Belongs to one `Report`
 
-**Persistence:** JSON at `outputs/{task_id}/judges/judge_{persona}.json`.
+**Persistence:** JSON at `aust/outputs/{task_id}/judges/judge_{persona}.json`.
 
 ### AgentPromptConfig
 
@@ -444,7 +444,7 @@ The following data models represent the core business entities and data structur
 
 ## Components
 
-AUST is structured into logical components with clear responsibilities and interfaces. The architecture follows the repository structure from the PRD (monorepo with agents/, tools/, rag/, memory/, loop/, outputs/, configs/ directories).
+AUST is structured into logical components with clear responsibilities and interfaces. The architecture follows the repository structure from the PRD (monorepo with aust/src/agents, aust/src/toolkits, aust/src/rag, aust/src/memory, aust/src/loop, aust/outputs, aust/configs directories).
 ### Task Input Parser
 
 Responsibility: Validate and parse user task prompts into a normalized TaskSpec containing model details and unlearning target.
@@ -452,7 +452,7 @@ Responsibility: Validate and parse user task prompts into a normalized TaskSpec 
 Key Interfaces:
 - parse(text: str) -> TaskSpec
 
-Implementation Notes: Prefer deterministic regex with a narrow LLM fallback. Emits `outputs/{task_id}/task_spec.json`. Blocks inner loop start if required fields missing.
+Implementation Notes: Prefer deterministic regex with a narrow LLM fallback. Emits `aust/outputs/{task_id}/task_spec.json`. Blocks inner loop start if required fields missing.
 
 ### Attack Code Synthesis & Self-Repair
 
@@ -463,7 +463,7 @@ Key Interfaces:
 - execute(artifact: CodeArtifact) -> RunResult
 - repair(artifact: CodeArtifact, error_log: str) -> CodeArtifact
 
-Implementation Notes: Sandboxed subprocess with timeouts; logs and artifacts under `outputs/{task_id}/runs/{run_id}/`.
+Implementation Notes: Sandboxed subprocess with timeouts; logs and artifacts under `aust/outputs/{task_id}/runs/{run_id}/`.
 
 ### Memory-to-RAG Exporter
 
@@ -722,7 +722,7 @@ Implementation Notes: Use section="experience" and payload linking to attack tra
 
 **Technology Stack:** Python 3.11, JSON, file I/O
 
-**Implementation Notes:** Implements Repository pattern. File-based storage: outputs/{task_id}/loop_state.json on persistent volume. Atomic writes (write to temp file, then rename) to prevent corruption. Future migration to database (PostgreSQL, MongoDB) possible without changing interface.
+**Implementation Notes:** Implements Repository pattern. File-based storage: aust/outputs/{task_id}/loop_state.json on persistent volume. Atomic writes (write to temp file, then rename) to prevent corruption. Future migration to database (PostgreSQL, MongoDB) possible without changing interface.
 
 ### Attack Trace Repository
 
@@ -739,7 +739,7 @@ Implementation Notes: Use section="experience" and payload linking to attack tra
 
 **Technology Stack:** Python 3.11, Jinja2 (for Markdown templating), JSON
 
-**Implementation Notes:** Implements Repository pattern. Aggregates iteration results into human-readable narrative. Dual-format output: JSON (outputs/{task_id}/attack_trace.json) for machine parsing, Markdown (outputs/{task_id}/attack_trace.md) for paper integration and user reproduction. Markdown format prioritizes readability per NFR9 (80%+ reproducibility).
+**Implementation Notes:** Implements Repository pattern. Aggregates iteration results into human-readable narrative. Dual-format output: JSON (aust/outputs/{task_id}/attack_trace.json) for machine parsing, Markdown (aust/outputs/{task_id}/attack_trace.md) for paper integration and user reproduction. Markdown format prioritizes readability per NFR9 (80%+ reproducibility).
 
 ### Configuration Manager
 
@@ -863,7 +863,7 @@ AUST integrates with external services for LLM/VLM access and infrastructure man
 
 ### OpenRouter API
 
-- **Purpose:** Provides unified access to multiple LLM and VLM models (GPT-4o, Claude 3.5 Sonnet, GPT-4V) for agent intelligence
+- **Purpose:** Provides unified access to multiple LLM and VLM models (GPT-5, Claude 3.5 Sonnet, GPT-4V) for agent intelligence
 - **Documentation:** https://openrouter.ai/docs
 - **Base URL(s):** https://openrouter.ai/api/v1
 - **Authentication:** Bearer token authentication via API key (passed in `Authorization: Bearer $OPENROUTER_API_KEY` header)
@@ -896,7 +896,7 @@ AUST integrates with external services for LLM/VLM access and infrastructure man
 
 **Integration Notes:**
 - Experiment Executor submits GPU jobs with H200 resource requests (`nvidia.com/gpu: 1`)
-- Job template includes persistent volume mounts for outputs/, experiment artifacts, and DeepUnlearn/concept-erasure codebases
+- Job template includes persistent volume mounts for aust/outputs/, experiment artifacts, and DeepUnlearn/concept-erasure codebases
 - Timeout: 30 minutes per job (NFR6), job killed if exceeded
 - Retry logic: Transient GPU unavailability (queue full) triggers 3 retries with 5-minute backoff
 - Job cleanup: Completed jobs deleted after results retrieved to avoid quota limits
@@ -1152,7 +1152,7 @@ AUST uses **file-based storage** with JSON serialization for MVP simplicity and 
 ### File-Based Storage Structure
 
 ```
-outputs/
+aust/outputs/
 └── {task_id}/
     ├── loop_state.json                    # LoopState model
     ├── attack_trace.json                  # AttackTrace model (JSON)
@@ -1321,7 +1321,7 @@ CAUST/                                    # Monorepo root (https://github.com/vi
 │   ├── memory_system.py                  # Memory System (CAMEL-AI wrapper)
 │   └── [CAMEL-AI managed storage]        # Memory persistence (implementation-specific)
 │
-├── outputs/                              # Persistent outputs (mounted PVC)
+├── aust/outputs/                         # Persistent outputs (mounted PVC)
 │   └── [task_id]/                        # Per-task outputs (created at runtime)
 │       ├── loop_state.json
 │       ├── attack_trace.json
@@ -1379,7 +1379,7 @@ CAUST/                                    # Monorepo root (https://github.com/vi
 - **tools/**: Experiment execution adapters and GPU job management
 - **rag/**: Semantic search system and paper corpus
 - **memory/**: Long-term memory for successful discoveries
-- **outputs/**: Persistent task results (attack traces, reports, judgments)
+- **aust/outputs/**: Persistent task results (attack traces, reports, judgments)
 - **configs/**: All configuration files (prompts, thresholds, tasks, personas)
 - **external/**: CAMEL-AI in dev/editable mode
 - **submodules/**: DeepUnlearn git submodule
