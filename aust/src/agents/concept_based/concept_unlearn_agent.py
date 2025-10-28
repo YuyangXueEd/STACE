@@ -56,9 +56,9 @@ DEFAULT_SYSTEM_MESSAGE = dedent(
       For SDXL/FLUX: esd-x, esd-x-strict (but xattn/noxattn will be mapped automatically)
 
     Parse natural language prompts like:
-    - "using ESD to erase Van Gogh" → erase_concept_esd(concept="Van Gogh", model="stable-diffusion", method_variant="xattn")
-    - "using ESD to erase nudity from SDXL with noxattn" → erase_concept_esd(concept="nudity", model="sdxl", method_variant="noxattn")
-    - "erase monster from Flux using ESD" → erase_concept_esd(concept="monster", model="flux", method_variant="xattn")
+    - "using ESD to erase Van Gogh" -> erase_concept_esd(concept="Van Gogh", model="stable-diffusion", method_variant="xattn")
+    - "using ESD to erase nudity from SDXL with noxattn" -> erase_concept_esd(concept="nudity", model="sdxl", method_variant="noxattn")
+    - "erase monster from Flux using ESD" -> erase_concept_esd(concept="monster", model="flux", method_variant="xattn")
 
     When a user provides a prompt:
     1. Extract the concept, model, and method_variant

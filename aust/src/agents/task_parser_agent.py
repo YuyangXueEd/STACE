@@ -42,7 +42,7 @@ _TASK_PARSER_SETTINGS = load_model_settings(
     "task_parser", _TASK_PARSER_MODEL_FALLBACK
 )
 
-_PROMPTS_DIR = Path(__file__).resolve().parents[3] / "configs" / "prompts"
+_PROMPTS_DIR = Path(__file__).resolve().parents[2] / "configs" / "prompts"
 _TASK_PARSER_PROMPT_FILE = _PROMPTS_DIR / "task_parser.yaml"
 
 

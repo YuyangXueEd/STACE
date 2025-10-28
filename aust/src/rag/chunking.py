@@ -11,21 +11,21 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Chunk:
-    """Represents a semantic chunk from a paper card.
+    """Represents a complete paper as a single chunk with prioritized sections.
 
     Attributes:
         arxiv_id: ArXiv identifier (e.g., "2505.11842")
-        section: Section type (METHODOLOGY, EXPERIMENTS, RESULTS, RELEVANCE)
+        section: Always "FULL_PAPER" - kept for backward compatibility
         task_type: Task taxonomy (any-to-t, any-to-v)
         attack_level: Attack taxonomy level
-        model_type: Model modality tag from metadata (e.g., "T→I")
+        model_type: Model modality tag from metadata (e.g., "T->I")
         paper_title: Full paper title
         card_path: Relative path to paper card markdown file
-        text: Full chunk text with section prefix
+        text: Combined text from important sections (metadata, summary, methodology, etc.)
     """
 
     arxiv_id: str
-    section: str
+    section: str  # Now "FULL_PAPER" instead of individual sections
     task_type: str
     attack_level: str
     model_type: str
@@ -94,13 +94,13 @@ class PaperCardChunker:
             raise ValueError(f"Paper cards directory not found: {paper_cards_dir}")
 
     def chunk_card(self, card_path: Path) -> List[Chunk]:
-        """Parse and chunk a single paper card.
+        """Parse a paper card into ONE chunk combining important sections.
 
         Args:
             card_path: Path to paper card markdown file
 
         Returns:
-            List of Chunk objects extracted from the card
+            List with single Chunk combining all important sections
 
         Raises:
             ValueError: If card parsing fails
@@ -118,42 +118,47 @@ class PaperCardChunker:
             # Extract sections
             sections = self._extract_sections(content)
 
-            # Build chunks
-            chunks = []
+            # Important sections to embed (in priority order)
+            PRIORITY_SECTIONS = [
+                "METADATA",
+                "SUMMARY",
+                "CORE_METHOD",
+                "ALGORITHM_APPROACH",
+                "IMPLEMENTATION",
+                "ATTACK_METHODS",
+            ]
+
+            # Combine important sections into one text
+            combined_parts = [f"# {paper_title}"]
+
             for block in sections:
                 section_type = self._resolve_section_name(block)
-                if not section_type:
+                if not section_type or section_type not in PRIORITY_SECTIONS:
                     continue
 
                 section_text = block.content.strip()
                 if not section_text:
                     continue
 
-                if (
-                    len(section_text) < self.MIN_CHUNK_LENGTH
-                    and section_type not in self.ALLOW_SHORT_SECTIONS
-                ):
-                    logger.debug(
-                        f"Skipping short section {section_type} in {card_path.name}"
-                    )
-                    continue
+                # Add section with header
+                combined_parts.append(f"\n## [{section_type}]\n{section_text}")
 
-                chunk_text = f"[{section_type}] {paper_title}\n\n{section_text}"
+            # Create single chunk for the entire paper
+            combined_text = "\n".join(combined_parts)
 
-                chunk = Chunk(
-                    arxiv_id=metadata["arxiv_id"],
-                    section=section_type,
-                    task_type=metadata["task_type"],
-                    attack_level=metadata["attack_level"],
-                    model_type=metadata["model_type"],
-                    paper_title=paper_title,
-                    card_path=str(card_path.relative_to(self.paper_cards_dir.parent)),
-                    text=chunk_text,
-                )
-                chunks.append(chunk)
+            chunk = Chunk(
+                arxiv_id=metadata["arxiv_id"],
+                section="FULL_PAPER",  # Changed from individual sections
+                task_type=metadata["task_type"],
+                attack_level=metadata["attack_level"],
+                model_type=metadata["model_type"],
+                paper_title=paper_title,
+                card_path=str(card_path.relative_to(self.paper_cards_dir.parent)),
+                text=combined_text,
+            )
 
-            logger.debug(f"Extracted {len(chunks)} chunks from {card_path.name}")
-            return chunks
+            logger.debug(f"Created 1 combined chunk from {card_path.name}")
+            return [chunk]  # Return list with single chunk
 
         except Exception as e:
             logger.error(f"Failed to chunk card {card_path}: {e}")
@@ -239,9 +244,10 @@ class PaperCardChunker:
             else:
                 metadata["attack_level"] = "unknown"
 
-        # Extract Model Type (e.g., "T→I")
+        # Extract Model Type (e.g., "T->I")
+        # Handle markdown bold: **Model Type**: value
         model_type_match = re.search(
-            r"Model Type[:\s]+([^\n]+)", content, re.IGNORECASE
+            r"\*?\*?Model Type\*?\*?[:\s]+([^\n]+)", content, re.IGNORECASE
         )
         if model_type_match:
             metadata["model_type"] = model_type_match.group(1).strip()

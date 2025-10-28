@@ -35,7 +35,7 @@ class ArxivPaperInfo:
     pdf_url: str
     venue: str
     year: int
-    model_type: str  # I+T→T, T→I, V+T→T, etc.
+    model_type: str  # I+T->T, T->I, V+T->T, etc.
     taxonomy: str  # Input Level, Encoder Level, Generator Level, Output Level, or ---
 
 
@@ -47,7 +47,7 @@ class PaperMetadata:
     year: int
     arxiv_id: str
     pdf_url: str
-    model_type: str  # I+T→T, T→I, etc.
+    model_type: str  # I+T->T, T->I, etc.
     model_type_category: str  # any-to-t or any-to-v
     attack_level: str  # input_level, encoder_level, generator_level, output_level, others
     taxonomy: str  # Original taxonomy from table
@@ -179,17 +179,17 @@ class JailbreakPaperDownloader:
         Classify model type into any-to-t or any-to-v based on output modality.
 
         Args:
-            model_type: Model type from table (I+T→T, T→I, V+T→T, etc.)
+            model_type: Model type from table (I+T->T, T->I, V+T->T, etc.)
 
         Returns:
             "any-to-t" or "any-to-v"
         """
-        # Check if output is Text (→T)
-        if "→T" in model_type or "->T" in model_type:
+        # Check if output is Text (->T)
+        if "->T" in model_type or "->T" in model_type:
             return "any-to-t"
 
-        # Check if output is Visual (→I or →V)
-        if "→I" in model_type or "→V" in model_type or "->I" in model_type or "->V" in model_type:
+        # Check if output is Visual (->I or ->V)
+        if "->I" in model_type or "->V" in model_type or "->I" in model_type or "->V" in model_type:
             return "any-to-v"
 
         # Default fallback
@@ -262,7 +262,7 @@ class JailbreakPaperDownloader:
         year_match = re.search(r"'(\d{2})", venue_text)
         if year_match:
             year_short = int(year_match.group(1))
-            # Convert 2-digit year to 4-digit (24 → 2024, 23 → 2023)
+            # Convert 2-digit year to 4-digit (24 -> 2024, 23 -> 2023)
             year = 2000 + year_short
         else:
             year_match_full = re.search(r"(\d{4})", venue_text)

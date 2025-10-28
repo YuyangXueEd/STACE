@@ -82,18 +82,56 @@ AUST is structured into logical components with clear responsibilities and inter
 
 ## Query Generator Agent
 
-**Responsibility:** Converts evaluation feedback and hypothesis needs into semantic search queries for the RAG system.
+**Responsibility:** Generates targeted RAG queries during multi-round debate based on hypothesis, critic feedback, and task context. Enables evidence-based hypothesis refinement by retrieving relevant research papers.
+
+**Location:** `aust/src/agents/query_generator.py` (350+ lines)
 
 **Key Interfaces:**
-- `generate_queries(hypothesis: Hypothesis, feedback: str | None, iteration: int) -> list[str]` - Generates 2-5 search queries
+- `generate_and_retrieve(context: HypothesisContext, hypothesis: Hypothesis, critic_feedback: CriticFeedback) -> tuple[list[str], list[dict]]` - Generates queries and retrieves papers
+- `_generate_queries(context: dict) -> list[dict]` - Internal: Generates 1-3 targeted queries with collection targeting
+- `_execute_retrieval(queries: list[dict]) -> list[dict]` - Internal: Executes RAG retrieval for all queries
+
+**Input Context:**
+- Current hypothesis (attack type, description, reasoning)
+- Critic feedback (weaknesses, suggestions, gap analysis)
+- Task specification (model type, unlearning method)
+- Iteration number and past results summary
+
+**Output:**
+- List of query strings (1-3 queries)
+- Retrieved papers with metadata (arxiv_id, section, relevance scores)
+- Query log saved to `outputs/{task_id}/queries/query_iteration_{N}_round_{M}.json`
+
+**Collection Targeting:**
+- Automatically selects RAG collection based on task type:
+  - `aust_papers_any_to_v` for text-to-image/diffusion tasks
+  - `aust_papers_any_to_t` for text-output/language model tasks
+  - `aust_papers` as fallback for general queries
 
 **Dependencies:**
-- OpenRouter API (LLM calls)
-- Agent Prompt Config
+- PaperRAG (vector database access)
+- OpenRouter API (via CAMEL-AI ChatAgent for query generation)
+- Query Generator Prompt Config (`configs/prompts/query_generator.yaml`)
 
-**Technology Stack:** Python 3.11, CAMEL-AI BaseAgent, OpenRouter API client
+**Technology Stack:** Python 3.11, CAMEL-AI ChatAgent, Qdrant vector database
 
-**Implementation Notes:** Generates multiple diverse queries to maximize RAG coverage. Incorporates feedback from previous iteration to refine search focus. Returns 2-5 queries ranked by expected relevance.
+**Integration Points:**
+- Called by HypothesisRefinementWorkforce during debate rounds
+- Invoked after each critic feedback round (except final round)
+- Retrieved papers injected into next generator refinement round
+- Papers accumulate across debate rounds for evidence-based refinement
+
+**Configuration:**
+- `max_queries`: Maximum queries per invocation (default: 3)
+- `top_k`: Papers retrieved per query (default: 5)
+- `output_dir`: Where query logs are saved
+
+**Implementation Notes:**
+- Query generation emphasizes **keyword-only** format (no boolean operators) for better semantic search
+- Explicitly requests target collection inference in prompt
+- Each query includes justification linking to critic feedback
+- Retrieval results include paper metadata for citation and provenance tracking
+- Handles retrieval failures gracefully (logs warning, continues with partial results)
 
 ## Experiment Executor
 

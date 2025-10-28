@@ -1,14 +1,11 @@
 """
-Inner Loop State Management for AUST Research Cycle.
+Inner loop state data models.
 
-Manages the state of the inner loop including:
-- Current iteration tracking
-- Hypothesis generation and debate history
-- RAG query history
-- Experiment execution results
-- Evaluator feedback accumulation
-- Exit condition tracking
+Encapsulates iteration bookkeeping, exit conditions, and serialization utilities
+used by the orchestrator to persist and resume research progress.
 """
+
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
@@ -17,7 +14,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from aust.src.loop.models import DebateSession, Hypothesis
+from aust.src.data_models.debate import DebateSession
+from aust.src.data_models.hypothesis import Hypothesis
 
 
 class ExitCondition(str, Enum):
@@ -177,12 +175,13 @@ class InnerLoopState(BaseModel):
         return any(iter_result.vulnerability_detected for iter_result in self.iterations)
 
     @property
-    ### TODO
     def highest_vulnerability_confidence(self) -> float:
         """Get highest vulnerability confidence across all iterations."""
         if not self.iterations:
             return 0.0
-        return max(iter_result.vulnerability_confidence for iter_result in self.iterations)
+        return max(
+            iter_result.vulnerability_confidence for iter_result in self.iterations
+        )
 
     def get_past_results_summary(self, num_recent: int = 3) -> list[dict]:
         """
@@ -196,16 +195,30 @@ class InnerLoopState(BaseModel):
         """
         recent_iterations = self.iterations[-num_recent:] if self.iterations else []
 
-        return [
-            {
-                "iteration": iter_result.iteration_number,
-                "hypothesis_summary": iter_result.hypothesis_summary,
-                "outcome": iter_result.outcome,
-                "key_learning": iter_result.key_learning,
-                "vulnerability_confidence": iter_result.vulnerability_confidence,
-            }
-            for iter_result in recent_iterations
-        ]
+        summaries: list[dict[str, Any]] = []
+        for iter_result in recent_iterations:
+            description = (iter_result.hypothesis.description or "").strip()
+            critic_assumption: Optional[str] = None
+            if iter_result.debate_session and iter_result.debate_session.exchanges:
+                latest_feedback = iter_result.debate_session.exchanges[-1].critic_feedback
+                if latest_feedback:
+                    critic_assumption = (
+                        latest_feedback.overall_assumption
+                        or latest_feedback.overall_assessment
+                    )
+
+            summaries.append(
+                {
+                    "iteration": iter_result.iteration_number,
+                    "description": description,
+                    "overall_assumption": critic_assumption,
+                    "outcome": iter_result.outcome,
+                    "key_learning": iter_result.key_learning,
+                    "vulnerability_confidence": iter_result.vulnerability_confidence,
+                }
+            )
+
+        return summaries
 
     def get_evaluator_feedback(self) -> Optional[str]:
         """Get evaluator feedback from most recent iteration."""
@@ -265,7 +278,7 @@ class InnerLoopState(BaseModel):
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return self.model_dump(mode='json')
+        return self.model_dump(mode="json")
 
     def save_to_file(self, file_path: Path):
         """
@@ -279,9 +292,9 @@ class InnerLoopState(BaseModel):
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Atomic write
-        temp_path = file_path.with_suffix('.tmp')
-        with open(temp_path, 'w', encoding='utf-8') as f:
-            json.dump(self.to_dict(), f, indent=2, ensure_ascii=False, default=str)
+        temp_path = file_path.with_suffix(".tmp")
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(self.to_dict(), handle, indent=2, ensure_ascii=False, default=str)
 
         temp_path.replace(file_path)
 
@@ -305,7 +318,11 @@ class InnerLoopState(BaseModel):
         if not file_path.exists():
             raise FileNotFoundError(f"State file not found: {file_path}")
 
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        with open(file_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
 
         return cls(**data)
+
+
+__all__ = ["ExitCondition", "IterationResult", "InnerLoopState"]
+

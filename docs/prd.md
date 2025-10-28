@@ -340,7 +340,7 @@ so that **the system autonomously iterates until a vulnerability is discovered o
 
 #### Acceptance Criteria
 
-1. Loop Orchestrator implemented in `aust/src/loop/inner_loop_orchestrator.py`
+1. Loop Orchestrator implemented in `aust/src/agents/inner_loop_orchestrator.py`
 2. Orchestrator manages loop state: iteration count, experiment history, current hypothesis, feedback
 3. Loop flow: Hypothesis Generator → (Critic if iteration > 1) → Experiment Executor → Evaluator → check exit condition
 4. Exit conditions: VULNERABILITY_FOUND OR iteration count >= 10 (configurable in `aust/configs/loop_config.yaml`)

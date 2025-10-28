@@ -18,24 +18,28 @@ The system leverages:
 
 ```
 CAUST/
-├── aust/                       # Main application code
-│   ├── agents/                 # LLM-powered agent implementations
-│   ├── tools/                  # Experiment execution adapters
-│   ├── rag/                    # RAG system for research papers
-│   ├── memory/                 # Long-term memory system
-│   ├── loop/                   # Orchestration and state management
-│   ├── outputs/                # Persistent task results
-│   ├── configs/                # Configuration files (prompts, thresholds)
-│   ├── experiments/            # Experiment results
-│   ├── submodules/             # External dependencies (DeepUnlearn)
-│   └── external/               # Dev mode dependencies (CAMEL-AI)
+├── aust/                       # Application package
+│   ├── configs/                # Prompts, personas, thresholds, task templates
+│   ├── experiments/            # Placeholder for experiment artifacts
+│   ├── logs/                   # Runtime logs
+│   ├── outputs/                # Persistent inner loop results
+│   ├── rag_paper_db/           # Vector store for paper RAG
+│   ├── scripts/                # CLI entry points for inner loop tooling
+│   ├── src/                    # Source code
+│   │   ├── agents/             # LLM-powered agent implementations
+│   │   ├── loop/               # Orchestration and state management
+│   │   ├── memory/             # Long-term memory system
+│   │   ├── rag/                # Research paper retrieval subsystem
+│   │   ├── toolkits/           # Integrations with external unlearning toolchains
+│   │   └── logging_config.py   # Project-wide logging setup
+│   ├── tests/                  # Test suite (unit + integration)
+│   └── utils/                  # Helper scripts (e.g., paper downloads)
 ├── docker/                     # Docker and Kubernetes configs
 │   ├── Dockerfile              # Container image definition
 │   ├── job.yaml                # Kubernetes GPU job template
 │   └── pvc.yaml                # Persistent volume claims
-├── scripts/                    # Utility scripts
-├── tests/                      # Test suite (unit + integration)
-├── logs/                       # Application logs
+├── external/                   # Third-party submodules (DeepUnlearn, CAMEL)
+├── logs/                       # Legacy log location (top-level)
 ├── requirements.txt            # Python dependencies
 └── docs/                       # Project documentation
 ```
@@ -115,6 +119,43 @@ docker run --rm caust:latest
    kubectl get jobs
    kubectl logs job/caust-experiment-job
    ```
+
+## Documentation
+
+All project documentation is organized in the `docs/` directory:
+
+### 📚 Main Documentation Files
+- **[docs/architecture.md](docs/architecture.md)** - System architecture overview
+- **[docs/prd.md](docs/prd.md)** - Product requirements document
+- **[docs/brief.md](docs/brief.md)** - Project brief
+
+### 📖 Story Documentation
+- **[docs/stories/](docs/stories/)** - Implementation stories and documentation
+  - Story 1.5 - Hypothesis Refinement Workforce
+  - Story 1.0-1.8 - Integration summaries
+  - Test results and implementation details
+  - Inner loop orchestrator documentation
+
+### 🤖 CAMEL-AI Resources
+Complete documentation for using CAMEL-AI patterns:
+- **[docs/camel-resources/README_CAMEL_RESOURCES.md](docs/camel-resources/README_CAMEL_RESOURCES.md)** - Master index and overview
+- **[docs/camel-resources/CAMEL_QUICK_REFERENCE.md](docs/camel-resources/CAMEL_QUICK_REFERENCE.md)** - Quick lookup while coding
+- **[docs/camel-resources/CAMEL_PATTERNS_GUIDE.md](docs/camel-resources/CAMEL_PATTERNS_GUIDE.md)** - Complete technical reference
+- **[docs/camel-resources/CAMEL_INDEX.md](docs/camel-resources/CAMEL_INDEX.md)** - File index and navigation
+
+### ⚙️ Configuration Guides
+- **[docs/config-guides/CONCEPT_ERASURE_CONFIG_SUMMARY.md](docs/config-guides/CONCEPT_ERASURE_CONFIG_SUMMARY.md)** - Configuration reference
+- **[docs/MAIN_PY_SUMMARY.md](docs/MAIN_PY_SUMMARY.md)** - Code structure summary
+
+### 🏗️ Architecture Documentation
+- **[docs/architecture/](docs/architecture/)** - Comprehensive architecture details
+  - Components, workflows, data models
+  - Tech stack and external APIs
+  - Test strategy and security considerations
+
+### 📋 Project Artifacts
+- **[docs/epics/](docs/epics/)** - Epic-level planning and requirements
+- **[docs/prds/](docs/prds/)** - Product requirement details
 
 ## Development Workflow
 

@@ -1217,7 +1217,7 @@ memory/
 All data models defined in the Data Models section are implemented as Pydantic models with schema validation:
 
 ```python
-# Example: loop/models.py
+# Example: data_models/loop_state.py
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
@@ -1275,24 +1275,24 @@ CAUST/                                    # Monorepo root (https://github.com/vi
 │   └── personas/                         # Judge personas
 │       └── judges.yaml
 │
-├── loop/                                 # Loop orchestration
+├── data_models/                          # Centralized Pydantic models
 │   ├── __init__.py
-│   ├── models.py                         # Pydantic models (LoopState, IterationResult, etc.)
-│   ├── inner_loop_orchestrator.py        # Inner Loop Orchestrator
-│   ├── outer_loop_orchestrator.py        # Outer Loop Orchestrator
-│   ├── state_machine.py                  # State machine logic
-│   └── repositories/                     # Repository pattern implementations
-│       ├── __init__.py
-│       ├── loop_state_repository.py      # Loop State Repository
-│       ├── attack_trace_repository.py    # Attack Trace Repository
-│       └── report_repository.py          # Report Repository
+│   ├── task_spec.py                      # TaskSpec schema + helpers
+│   ├── hypothesis.py                     # Hypothesis + HypothesisContext
+│   ├── critic.py                         # Critic feedback model
+│   ├── debate.py                         # DebateExchange + DebateSession
+│   └── loop_state.py                     # InnerLoopState + IterationResult
 │
-├── agents/                               # Agent implementations
+├── loop/                                 # Legacy namespace (kept for compatibility)
+│   └── __init__.py
+│
+├── agents/                               # Agent implementations and orchestrators
 │   ├── __init__.py
 │   ├── base_agent.py                     # Base agent class (wraps CAMEL-AI)
 │   ├── hypothesis_generator.py           # Hypothesis Generator Agent
 │   ├── critic.py                         # Critic Agent
 │   ├── query_generator.py                # Query Generator Agent
+│   ├── inner_loop_orchestrator.py        # Inner Loop Orchestrator
 │   ├── evaluator.py                      # Evaluator Agent
 │   ├── reporter.py                       # Reporter Agent
 │   └── judge.py                          # Judge Agents

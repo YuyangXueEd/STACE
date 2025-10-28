@@ -8,13 +8,13 @@ files raise explicit errors.
 
 Workflow summary:
 1. Iteration 1 seeds a hypothesis directly from the starter template.
-2. Subsequent iterations run a debate loop:
+2. Subsequent iterations run a multi-round debate loop:
    - Generate hypothesis from the task prompt.
    - Submit hypothesis JSON to the critic.
-   - Regenerate a refined hypothesis with the critic's feedback injected.
-   - Re-evaluate the refined hypothesis to capture final scores.
-3. Critic feedback is returned to upstream orchestration so the query generator can
-   build better RAG queries for the next iteration.
+   - Feed critic feedback into the query generator to pull focused RAG evidence.
+   - Regenerate a refined hypothesis with the new evidence and critic guidance.
+   - Repeat until the configured debate round budget is exhausted.
+3. Critic feedback and retrieval trails are persisted for upstream orchestration.
 """
 
 from __future__ import annotations
@@ -36,7 +36,8 @@ from camel.models import ModelFactory
 from camel.types import ModelPlatformType
 from dotenv import load_dotenv
 
-from aust.src.loop.models import (
+from aust.src.agents.query_generator import QueryGeneratorAgent
+from aust.src.data_models import (
     CriticFeedback,
     DebateExchange,
     DebateSession,
@@ -158,13 +159,14 @@ class HypothesisRefinementWorkforce:
         context: HypothesisContext,
         *,
         enable_debate: bool = True,
+        debate_rounds: Optional[int] = None,
+        query_generator: Optional[QueryGeneratorAgent] = None,
     ) -> tuple[Hypothesis, DebateSession]:
         """
         Generate a hypothesis and optional debate session output.
 
         The first iteration always uses the starter template without a critic debate.
-        Subsequent iterations run a two-round debate cycle (generator → critic →
-        generator → critic).
+        Later iterations run a configurable number of generator -> critic -> query loops.
         """
         task_type = self._context_task_type(context)
         iteration = context.iteration_number
@@ -202,95 +204,208 @@ class HypothesisRefinementWorkforce:
             session.completed_at = datetime.now(timezone.utc)
             return hypothesis, session
 
-        logger.info("Iteration %s: running hypothesis/critic debate", iteration)
+        rounds_budget = max(1, debate_rounds or self.max_iterations)
+        logger.info(
+            "Iteration %s: running hypothesis/critic debate (%s rounds)",
+            iteration,
+            rounds_budget,
+        )
 
-        # Round 1 – initial generation
-        initial_payload = self._invoke_generator(
-            task_type=task_type,
-            user_prompt=self._build_generator_prompt(
-                context=context,
+        working_context = self._clone_context(context)
+        latest_feedback: Optional[CriticFeedback] = None
+        previous_exchange: Optional[DebateExchange] = None
+        final_hypothesis: Optional[Hypothesis] = None
+
+        for round_number in range(1, rounds_budget + 1):
+            stage = "initial" if round_number == 1 else "refinement"
+            user_prompt = self._build_generator_prompt(
+                context=working_context,
                 task_type=task_type,
-                stage="initial",
-                critic_feedback=None,
-            ),
-        )
-        initial_hypothesis = self._hydrate_hypothesis(
-            payload=initial_payload,
-            context=context,
-            stage="initial",
-            latest_feedback=None,
-        )
-        first_feedback = self._invoke_critic(
-            task_type=task_type,
-            generator_payload=initial_payload,
-        )
+                stage=stage,
+                critic_feedback=latest_feedback,
+            )
+            payload = self._invoke_generator(task_type=task_type, user_prompt=user_prompt)
+            hypothesis = self._hydrate_hypothesis(
+                payload=payload,
+                context=working_context,
+                stage=stage,
+                latest_feedback=latest_feedback,
+            )
+            final_hypothesis = hypothesis
 
-        # Round 2 – refinement
-        refined_payload = self._invoke_generator(
-            task_type=task_type,
-            user_prompt=self._build_generator_prompt(
-                context=context,
+            if previous_exchange is not None:
+                previous_exchange.refined_hypothesis = hypothesis
+
+            critic_feedback = self._invoke_critic(
                 task_type=task_type,
-                stage="refinement",
-                critic_feedback=first_feedback,
-            ),
-        )
-        refined_hypothesis = self._hydrate_hypothesis(
-            payload=refined_payload,
-            context=context,
-            stage="refinement",
-            latest_feedback=first_feedback,
-        )
-        final_feedback = self._invoke_critic(
-            task_type=task_type,
-            generator_payload=refined_payload,
-        )
+                generator_payload=payload,
+            )
 
-        # Attach critic insight as learning for upstream consumers
-        # Record debate exchanges
-        round1 = DebateExchange(
-            round_number=1,
-            initial_hypothesis=initial_hypothesis,
-            critic_feedback=first_feedback,
-            refined_hypothesis=refined_hypothesis,
-            generator_model=self.generator_model,
-            critic_model=self.critic_model,
-        )
-        improvement = (
-            final_feedback.average_score - first_feedback.average_score
-            if first_feedback and final_feedback
-            else None
-        )
-        if improvement is not None:
-            round1.improvement_delta = improvement
+            exchange = DebateExchange(
+                round_number=round_number,
+                initial_hypothesis=hypothesis,
+                critic_feedback=critic_feedback,
+                refined_hypothesis=None,
+                generator_model=self.generator_model,
+                critic_model=self.critic_model,
+            )
+            if latest_feedback is not None:
+                exchange.improvement_delta = (
+                    critic_feedback.average_score - latest_feedback.average_score
+                )
 
-        round2 = DebateExchange(
-            round_number=2,
-            initial_hypothesis=refined_hypothesis,
-            critic_feedback=final_feedback,
-            refined_hypothesis=None,
-            generator_model=self.generator_model,
-            critic_model=self.critic_model,
-        )
+            session.exchanges.append(exchange)
+            previous_exchange = exchange
+            latest_feedback = critic_feedback
 
-        session.exchanges.extend([round1, round2])
-        session.total_rounds = 2
-        session.final_hypothesis = refined_hypothesis
+            should_query = query_generator is not None and round_number < rounds_budget
+            if should_query:
+                rag_queries, retrieved_papers = self._invoke_query_generator(
+                    query_generator=query_generator,
+                    context=working_context,
+                    hypothesis=hypothesis,
+                    critic_feedback=critic_feedback,
+                )
+                if rag_queries:
+                    exchange.rag_queries = rag_queries
+                if retrieved_papers:
+                    limited_context = retrieved_papers[: self._max_retrieved_papers]
+                    exchange.retrieval_context = limited_context
+                    working_context.retrieved_papers = self._merge_retrieved_papers(
+                        new_papers=retrieved_papers,
+                        existing=working_context.retrieved_papers,
+                    )
+
+        final_feedback = latest_feedback
+        session.total_rounds = len(session.exchanges)
+        session.final_hypothesis = final_hypothesis
         session.completed_at = datetime.now(timezone.utc)
-        session.quality_threshold_met = (
-            final_feedback.average_score >= self.quality_threshold
-        )
-        session.convergence_reached = (
-            abs(improvement) < 0.05 if improvement is not None else False
-        )
+        if final_feedback is not None:
+            session.quality_threshold_met = (
+                final_feedback.average_score >= self.quality_threshold
+            )
+        if session.exchanges:
+            last_exchange = session.exchanges[-1]
+            if last_exchange.improvement_delta is not None:
+                session.convergence_reached = (
+                    abs(last_exchange.improvement_delta) < 0.05
+                )
+
+        if final_hypothesis is None:
+            raise RuntimeError("Debate ended without generating a hypothesis")
 
         logger.info(
-            "Iteration %s debate complete (final_score=%.2f, improvement=%s)",
+            "Iteration %s debate complete (rounds=%s, final_score=%s)",
             iteration,
-            final_feedback.average_score,
-            f"{improvement:.3f}" if improvement is not None else "n/a",
+            session.total_rounds,
+            f"{final_feedback.average_score:.2f}" if final_feedback else "n/a",
         )
-        return refined_hypothesis, session
+        return final_hypothesis, session
+
+    def save_debate_log(self, session: DebateSession, output_dir: Path) -> Path:
+        """
+        Persist an entire debate session to disk for downstream auditing.
+
+        Args:
+            session: Debate session returned from generate_refined_hypothesis.
+            output_dir: Directory under which the log should be stored.
+
+        Returns:
+            Path to the saved debate log.
+        """
+        if not isinstance(session, DebateSession):
+            raise TypeError("session must be a DebateSession instance")
+
+        target_dir = Path(output_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"debate_iteration_{session.iteration_number:02d}.json"
+        output_path = target_dir / filename
+        temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+
+        payload = self._serialize_debate_session(session)
+        with temp_path.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        temp_path.replace(output_path)
+        logger.info("Debate log written to %s", output_path)
+        return output_path
+
+    # ------------------------------------------------------------------ #
+    # Debate logging helpers
+    # ------------------------------------------------------------------ #
+    def _serialize_debate_session(self, session: DebateSession) -> dict[str, Any]:
+        """Convert a DebateSession into a JSON-serializable payload."""
+        metadata = {
+            "iteration_number": session.iteration_number,
+            "task_id": session.task_id,
+            "task_type": session.task_type,
+            "debate_enabled": session.debate_enabled,
+            "total_rounds": session.total_rounds,
+            "quality_threshold_met": session.quality_threshold_met,
+            "convergence_reached": session.convergence_reached,
+            "quality_threshold": self.quality_threshold,
+            "generator_model": self.generator_model,
+            "critic_model": self.critic_model,
+            "started_at": self._serialize_datetime(session.started_at),
+            "completed_at": self._serialize_datetime(session.completed_at),
+            "duration_seconds": session.duration_seconds,
+            "rag_queries": list(session.rag_queries),
+            "retrieved_papers": [
+                dict(paper) if isinstance(paper, dict) else paper
+                for paper in session.retrieved_papers
+            ],
+        }
+
+        return {
+            "metadata": metadata,
+            "final_hypothesis": self._dump_model_json_safe(session.final_hypothesis),
+            "exchanges": [
+                self._serialize_debate_exchange(exchange)
+                for exchange in session.exchanges
+            ],
+        }
+
+    def _serialize_debate_exchange(self, exchange: DebateExchange) -> dict[str, Any]:
+        """Convert a DebateExchange into a serializable dict."""
+        return {
+            "round_number": exchange.round_number,
+            "timestamp": self._serialize_datetime(exchange.timestamp),
+            "generator_model": exchange.generator_model,
+            "critic_model": exchange.critic_model,
+            "improvement_delta": exchange.improvement_delta,
+            "initial_hypothesis": self._dump_model_json_safe(
+                exchange.initial_hypothesis
+            ),
+            "critic_feedback": self._dump_model_json_safe(exchange.critic_feedback),
+            "refined_hypothesis": self._dump_model_json_safe(
+                exchange.refined_hypothesis
+            ),
+            "rag_queries": list(exchange.rag_queries),
+            "retrieval_context": [
+                dict(context) if isinstance(context, dict) else context
+                for context in exchange.retrieval_context
+            ],
+        }
+
+    @staticmethod
+    def _dump_model_json_safe(model: Optional[Any]) -> Optional[Any]:
+        """Dump Pydantic models (or compatible objects) into JSON-safe dicts."""
+        if model is None:
+            return None
+        if hasattr(model, "model_dump"):
+            return model.model_dump(mode="json")
+        if hasattr(model, "dict"):
+            return model.dict()
+        return model
+
+    @staticmethod
+    def _serialize_datetime(value: Optional[datetime]) -> Optional[str]:
+        """Return ISO-8601 string for datetime values."""
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
 
     # ------------------------------------------------------------------ #
     # LLM invocation helpers
@@ -354,6 +469,74 @@ class HypothesisRefinementWorkforce:
         finally:
             agent.reset()
 
+    def _invoke_query_generator(
+        self,
+        *,
+        query_generator: QueryGeneratorAgent,
+        context: HypothesisContext,
+        hypothesis: Hypothesis,
+        critic_feedback: CriticFeedback,
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        """
+        Run the query generator to fetch new literature after a critic round.
+        """
+        try:
+            generation = query_generator.generate(
+                iteration_number=context.iteration_number,
+                task_spec=context.task_spec,
+                hypothesis=hypothesis,
+                critic_feedback=critic_feedback,
+                past_results=context.past_results,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Query generator failed: %s", exc, exc_info=True)
+            return [], []
+
+        queries = [entry.query for entry in generation.search_results]
+        papers = generation.retrieved_papers or []
+        if queries:
+            logger.info(
+                "Query generator produced %s queries and %s papers",
+                len(queries),
+                len(papers),
+            )
+        else:
+            logger.warning("Query generator returned no queries")
+        return queries, papers
+
+    @staticmethod
+    def _clone_context(context: HypothesisContext) -> HypothesisContext:
+        """Create a deep copy of the provided HypothesisContext."""
+        if hasattr(context, "model_copy"):
+            return context.model_copy(deep=True)
+        return deepcopy(context)
+
+    @staticmethod
+    def _merge_retrieved_papers(
+        *,
+        new_papers: Optional[list[dict[str, Any]]],
+        existing: Optional[list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        """Merge newly retrieved papers with any existing context while deduplicating."""
+        merged: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+
+        def _append_entries(entries: Optional[list[dict[str, Any]]]) -> None:
+            if not entries:
+                return
+            for paper in entries:
+                arxiv_id = str(paper.get("arxiv_id") or paper.get("id") or "unknown")
+                section = str(paper.get("section") or "")
+                key = (arxiv_id, section)
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.append(paper)
+
+        _append_entries(new_papers)
+        _append_entries(existing)
+        return merged
+
     # ------------------------------------------------------------------ #
     # Prompt construction
     # ------------------------------------------------------------------ #
@@ -379,7 +562,9 @@ class HypothesisRefinementWorkforce:
             "evaluator_feedback_section": self._render_evaluator_feedback(context),
             "retrieved_papers_section": self._render_retrieved_papers(context),
             "memory_entries_section": self._render_memory_entries(context),
-            "starter_template_section": self._render_starter_template(stage),
+            "starter_template_section": (
+                self._render_starter_template(stage) if stage == "starter" else ""
+            ),
             "critic_feedback_section": self._render_critic_feedback_section(
                 context=context,
                 latest_feedback=critic_feedback,
@@ -464,14 +649,9 @@ class HypothesisRefinementWorkforce:
 
         lines = ["### Past Iteration Results"]
         for idx, item in enumerate(results[-3:], start=1):
-            summary = self._normalize_text(item.get("hypothesis_summary"))
-            outcome = self._normalize_text(item.get("outcome"))
-            learning = self._normalize_text(item.get("key_learning"))
-            lines.append(f"{idx}. Hypothesis: {summary or 'No summary recorded'}")
-            if outcome:
-                lines.append(f"   Outcome: {outcome}")
-            if learning:
-                lines.append(f"   Key learning: {learning}")
+            description = self._normalize_text(item.get("description"))
+            lines.append(f"{idx}. Hypothesis: {description or 'No description recorded'}")
+
         return "\n".join(lines) + "\n"
 
     def _render_evaluator_feedback(self, context: HypothesisContext) -> str:
@@ -543,7 +723,7 @@ class HypothesisRefinementWorkforce:
 
         for key in [
             "attack_type",
-            "target_type",
+            "target",
             "description",
             "experiment_design",
             "confidence_score",
@@ -552,37 +732,6 @@ class HypothesisRefinementWorkforce:
             value = self._normalize_text(default_hypothesis.get(key))
             if value:
                 lines.append(f"- {key}: {value}")
-
-        success = template.get("success_criteria", {})
-        if isinstance(success, dict) and success:
-            lines.append("")
-            lines.append("#### Success Criteria")
-            for criterion, details in success.items():
-                definition = self._normalize_text(details.get("definition"))
-                threshold = self._normalize_text(details.get("threshold"))
-                interpretation = self._normalize_text(details.get("interpretation"))
-                lines.append(f"- {criterion}:")
-                if definition:
-                    lines.append(f"   definition: {definition}")
-                if threshold:
-                    lines.append(f"   threshold: {threshold}")
-                if interpretation:
-                    lines.append(f"   interpretation: {interpretation}")
-
-        required = template.get("required_artifacts", [])
-        if required:
-            lines.append("")
-            lines.append("#### Required Artifacts")
-            for item in required:
-                normalized = self._normalize_text(item)
-                if normalized:
-                    lines.append(f"- {normalized}")
-
-        reasoning_trace = self._normalize_text(template.get("reasoning_trace"))
-        if reasoning_trace:
-            lines.append("")
-            lines.append("#### Template Reasoning Trace")
-            lines.append(reasoning_trace)
 
         return "\n".join(lines) + "\n"
 
@@ -598,33 +747,90 @@ class HypothesisRefinementWorkforce:
         if summaries:
             lines.append("### Historical Critic Feedback")
             for summary in summaries[-3:]:
-                overall = self._normalize_text(summary.get("overall_assessment"))
+                round_number = summary.get("round")
+                heading = (
+                    f"- Round {round_number}"
+                    if isinstance(round_number, int)
+                    else "- Previous Round"
+                )
+                lines.append(heading)
+
                 scores = ", ".join(
-                    f"{name} {summary.get(name):.2f}"
+                    f"{name.replace('_', ' ').title()} {summary.get(name):.2f}"
                     for name in ("novelty_score", "feasibility_score", "rigor_score")
                     if isinstance(summary.get(name), (int, float))
                 )
                 if scores:
-                    lines.append(f"- Scores: {scores}")
+                    lines.append(f"   - Scores: {scores}")
+
+                overall = self._normalize_text(summary.get("overall_assessment"))
                 if overall:
-                    lines.append(f"  Assessment: {overall}")
+                    lines.append(f"   - Assessment: {overall}")
+
+                assumption = self._normalize_text(
+                    summary.get("overall_assumption")
+                    or summary.get("critic_overall_assumption")
+                )
+                if assumption:
+                    lines.append(f"   - Assumption: {assumption}")
+
             lines.append("")
 
         if latest_feedback:
             lines.append("### Latest Critic Feedback")
-            lines.append(latest_feedback.overall_assessment.strip())
+
+            latest_scores = ", ".join(
+                f"{label} {value:.2f}"
+                for label, value in (
+                    ("Novelty", latest_feedback.novelty_score),
+                    ("Feasibility", latest_feedback.feasibility_score),
+                    ("Rigor", latest_feedback.rigor_score),
+                )
+            )
+            if latest_scores:
+                lines.append(f"- Scores: {latest_scores}")
+
+            assessment = self._normalize_text(latest_feedback.overall_assessment)
+            if assessment:
+                lines.append(f"- Assessment: {assessment}")
+
+            assumption_text = self._normalize_text(latest_feedback.overall_assumption)
+            if assumption_text:
+                lines.append(f"- Assumption: {assumption_text}")
+
+            # if latest_feedback.strengths:
+            #     strengths = []
+            #     for item in latest_feedback.strengths:
+            #         normalized = self._normalize_text(item)
+            #         if normalized:
+            #             strengths.append(normalized)
+            #     if strengths:
+            #         lines.append("- Strengths:")
+            #         for item in strengths:
+            #             lines.append(f"  - {item}")
+
+            # if latest_feedback.weaknesses:
+            #     weaknesses = []
+            #     for item in latest_feedback.weaknesses:
+            #         normalized = self._normalize_text(item)
+            #         if normalized:
+            #             weaknesses.append(normalized)
+            #     if weaknesses:
+            #         lines.append("- Weaknesses:")
+            #         for item in weaknesses:
+            #             lines.append(f"  - {item}")
+
             if latest_feedback.suggestions:
-                lines.append("Suggestions:")
-                for suggestion in latest_feedback.suggestions:
-                    normalized = self._normalize_text(suggestion)
+                suggestions = []
+                for item in latest_feedback.suggestions:
+                    normalized = self._normalize_text(item)
                     if normalized:
-                        lines.append(f"- {normalized}")
-            if latest_feedback.weaknesses:
-                lines.append("Weaknesses:")
-                for weakness in latest_feedback.weaknesses:
-                    normalized = self._normalize_text(weakness)
-                    if normalized:
-                        lines.append(f"- {normalized}")
+                        suggestions.append(normalized)
+                if suggestions:
+                    lines.append("- Suggestions:")
+                    for item in suggestions:
+                        lines.append(f"  - {item}")
+
             lines.append("")
 
         return "\n".join(line for line in lines if line).strip() + ("\n" if lines else "")
@@ -642,9 +848,8 @@ class HypothesisRefinementWorkforce:
     ) -> Hypothesis:
         attack_type = self._require_str(payload, "attack_type")
         description = self._require_str(payload, "description")
-        target_type = payload.get("target_type") or payload.get("target")
-        target = self._normalize_text(target_type) or "unspecified target"
-        experiment_design = self._normalize_text(payload.get("experiment_design"))
+        target_type = self._require_str(payload, "target_type")
+        experiment_design = self._require_str(payload, "experiment_design")
 
         confidence = float(payload.get("confidence_score"))
         novelty = float(payload.get("novelty_score"))
@@ -652,7 +857,8 @@ class HypothesisRefinementWorkforce:
         hypothesis = Hypothesis(
             attack_type=attack_type,
             description=description,
-            target=target,
+            experiment_design=experiment_design,
+            target_type=target_type,
             confidence_score=confidence,
             novelty_score=novelty,
         )
@@ -666,6 +872,9 @@ class HypothesisRefinementWorkforce:
         weaknesses = self._string_list(data.get("weaknesses"))
         suggestions = self._string_list(data.get("suggestions"))
         overall = self._require_str(data, "overall_assessment")
+        assumption = data.get("overall_assumption")
+        if isinstance(assumption, str):
+            assumption = assumption.strip() or None
         return CriticFeedback(
             novelty_score=novelty,
             feasibility_score=feasibility,
@@ -674,6 +883,7 @@ class HypothesisRefinementWorkforce:
             weaknesses=weaknesses,
             suggestions=suggestions,
             overall_assessment=overall,
+            overall_assumption=assumption,
         )
 
     # ------------------------------------------------------------------ #

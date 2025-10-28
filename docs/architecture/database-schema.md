@@ -70,7 +70,7 @@ memory/
 All data models defined in the Data Models section are implemented as Pydantic models with schema validation:
 
 ```python
-# Example: loop/models.py
+# Example: data_models/loop_state.py
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional

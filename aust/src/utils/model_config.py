@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-MODELS_DIR = Path(__file__).resolve().parents[3] / "configs" / "models"
+MODELS_DIR = Path(__file__).resolve().parents[2] / "configs" / "models"
 
 
 def load_model_settings(

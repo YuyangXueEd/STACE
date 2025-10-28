@@ -32,7 +32,7 @@ This will:
 - Read all paper cards from `.paper_cards/`
 - Extract semantic sections (Methodology, Experiments, Results, Relevance)
 - Embed chunks using SentenceTransformers
-- Index ~400-500 chunks into Qdrant at `aust/src/rag/vector_index/`
+- Index ~400-500 chunks into Qdrant at `aust/rag_paper_db/`
 
 Expected output:
 ```
@@ -103,7 +103,7 @@ results = rag.search(
 
 ```python
 rag = PaperRAG(
-    storage_path="aust/src/rag/vector_index",  # Path to Qdrant storage
+    storage_path="aust/rag_paper_db",  # Path to Qdrant storage
     embedding_model="sentence-transformers/all-MiniLM-L6-v2",  # Embedding model
     collection_name="aust_papers",  # Qdrant collection name
     similarity_threshold=0.5  # Default similarity threshold (0-1)
@@ -188,6 +188,7 @@ class Chunk:
     section: str           # "METHODOLOGY" | "EXPERIMENTS" | "RESULTS" | "RELEVANCE"
     task_type: str         # "any-to-t" | "any-to-v"
     attack_level: str      # "input_level" | "encoder_level" | "generator_level" | ...
+    model_type: str        # "T->I" | ... (copied from paper card metadata)
     paper_title: str       # "Video-SafetyBench: A Benchmark for..."
     card_path: str         # ".paper_cards/any-to-t/input_level/2505.11842.md"
     text: str              # "[METHODOLOGY] Video-SafetyBench...\n\nA three-stage..."
@@ -206,6 +207,7 @@ class SearchResult:
     similarity_score: float  # Cosine similarity (0-1)
     task_type: str
     attack_level: str
+    model_type: str
     paper_title: str
     card_path: str
 ```
@@ -322,16 +324,16 @@ python aust/scripts/build_vector_index.py
 ### No results returned
 
 **Possible causes**:
-1. Similarity threshold too high → Lower `similarity_threshold` parameter
-2. Filters too restrictive → Remove `section_filter` or `task_type_filter`
-3. Query not semantically similar → Rephrase query to match paper card content
+1. Similarity threshold too high -> Lower `similarity_threshold` parameter
+2. Filters too restrictive -> Remove `section_filter` or `task_type_filter`
+3. Query not semantically similar -> Rephrase query to match paper card content
 
 ### Slow query performance
 
 **Possible causes**:
-1. Large `top_k` value → Reduce to 5-10 results
-2. Cold start (first query) → Subsequent queries will be faster due to caching
-3. Complex filters → Simplify filter conditions
+1. Large `top_k` value -> Reduce to 5-10 results
+2. Cold start (first query) -> Subsequent queries will be faster due to caching
+3. Complex filters -> Simplify filter conditions
 
 ## Implementation Details
 

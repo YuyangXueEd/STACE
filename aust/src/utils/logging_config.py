@@ -7,12 +7,18 @@ instead of print() statements (per coding standards).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+try:  # Optional dependency in some environments
+    from openai.types.chat.chat_completion import ChatCompletion
+except ImportError:  # pragma: no cover
+    ChatCompletion = None
 
 from pythonjsonlogger import jsonlogger
 from rich.console import Console
@@ -63,6 +69,9 @@ def setup_logging(
     logger = logging.getLogger()
     logger.setLevel(log_level.upper())
     logger.handlers.clear()
+    camel_filter = _CamelResultFilter()
+    logger.addFilter(camel_filter)
+    logging.getLogger("camel.base_model").addFilter(camel_filter)
 
     json_formatter = CustomJsonFormatter("%(timestamp)s %(level)s %(name)s %(message)s")
 
@@ -129,6 +138,84 @@ def get_logger(name: str) -> logging.Logger:
     """Get a logger instance for a module."""
 
     return logging.getLogger(name)
+
+
+class _CamelResultFilter(logging.Filter):
+    """Condense CAMEL model logs to only write assistant content."""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - exercised indirectly
+        if record.name != "camel.base_model":
+            return True
+
+        if not isinstance(record.msg, str) or not record.msg.startswith("Result:"):
+            return True
+
+        if not record.args:
+            return True
+
+        content = self._extract_content(record.args[0])
+        if content is None:
+            return True
+
+        record.msg = "Result content: %s"
+        record.args = (content,)
+        return True
+
+    def _extract_content(self, result: object) -> Optional[str]:
+        contents = self._extract_from_chat_completion(result)
+        if not contents:
+            contents = self._extract_from_dict(result)
+
+        if not contents:
+            return None
+
+        if len(contents) == 1:
+            return self._stringify(contents[0])
+
+        joined = " | ".join(self._stringify(item) for item in contents)
+        return joined or None
+
+    @staticmethod
+    def _extract_from_chat_completion(result: object) -> list:
+        if ChatCompletion is None or not isinstance(result, ChatCompletion):
+            return []
+
+        contents = []
+        for choice in getattr(result, "choices", []):
+            message = getattr(choice, "message", None)
+            if not message:
+                continue
+            content = getattr(message, "content", None)
+            if content is not None:
+                contents.append(content)
+        return contents
+
+    @staticmethod
+    def _extract_from_dict(result: object) -> list:
+        if not isinstance(result, dict):
+            return []
+
+        choices = result.get("choices")
+        if not isinstance(choices, list):
+            return []
+
+        contents = []
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message")
+            if isinstance(message, dict) and "content" in message:
+                contents.append(message["content"])
+        return contents
+
+    @staticmethod
+    def _stringify(value: object) -> str:
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except TypeError:
+            return str(value)
 
 
 __all__ = [

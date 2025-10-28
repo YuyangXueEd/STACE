@@ -1,14 +1,19 @@
-"""Vector database interface for paper card retrieval using CAMEL + Qdrant."""
+"""Vector database interface for paper card retrieval using CAMEL's VectorRetriever pattern.
+
+This module follows CAMEL's RAG cookbook approach while keeping:
+- SentenceTransformers for embedding (local, fast)
+- OpenRouter for LLM queries (when needed)
+- Qdrant for vector storage
+"""
 
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from camel.embeddings import SentenceTransformerEncoder
 from camel.retrievers import VectorRetriever
 from camel.storages import QdrantStorage
-from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 logger = logging.getLogger(__name__)
 
@@ -19,14 +24,15 @@ class SearchResult:
 
     Attributes:
         arxiv_id: ArXiv identifier
-        section: Section type (METHODOLOGY, EXPERIMENTS, RESULTS, RELEVANCE)
+        section: Section type (FULL_PAPER or legacy sections)
         text: Full chunk text
         similarity_score: Cosine similarity score (0-1)
         task_type: Task taxonomy (any-to-t, any-to-v)
         attack_level: Attack taxonomy level
-        model_type: Model modality tag from metadata (e.g., "T→I")
+        model_type: Model modality tag from metadata (e.g., "T->I")
         paper_title: Full paper title
         card_path: Relative path to paper card
+        metadata: Full metadata dict from vector DB
     """
 
     arxiv_id: str
@@ -38,13 +44,20 @@ class SearchResult:
     model_type: str
     paper_title: str
     card_path: str
+    metadata: Dict[str, Any]
 
 
 class PaperRAG:
-    """Vector-based RAG interface for semantic search over paper cards.
+    """Vector-based RAG following CAMEL's VectorRetriever pattern.
 
-    Uses CAMEL's VectorRetriever with Qdrant storage and SentenceTransformers
-    embeddings for fast, local semantic search.
+    Follows the approach from CAMEL's RAG cookbook:
+    - Uses VectorRetriever with QdrantStorage
+    - SentenceTransformers for local embedding
+    - Simple query() interface with metadata filtering
+
+    Example:
+        >>> rag = PaperRAG()
+        >>> results = rag.search("diffusion models", top_k=5)
     """
 
     DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -58,7 +71,7 @@ class PaperRAG:
         collection_name: str = DEFAULT_COLLECTION_NAME,
         similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
     ):
-        """Initialize PaperRAG with existing or new collection.
+        """Initialize PaperRAG with CAMEL's VectorRetriever.
 
         Args:
             storage_path: Path to Qdrant local storage directory
@@ -74,25 +87,23 @@ class PaperRAG:
         self.similarity_threshold = similarity_threshold
 
         logger.info(
-            f"Initializing PaperRAG with embedding model: {embedding_model}, "
+            f"Initializing PaperRAG with embedding: {embedding_model}, "
             f"storage: {storage_path}, collection: {collection_name}"
         )
 
-        # Initialize SentenceTransformers embedding via CAMEL
+        # Create embedding model (SentenceTransformers via CAMEL)
         self.embedding_model = SentenceTransformerEncoder(model_name=embedding_model)
-
-        # Get embedding dimension
         vector_dim = self.embedding_model.get_output_dim()
         logger.info(f"Embedding dimension: {vector_dim}")
 
-        # Initialize Qdrant storage via CAMEL
+        # Create storage (Qdrant via CAMEL)
         self.storage = QdrantStorage(
             vector_dim=vector_dim,
             path=str(self.storage_path),
             collection_name=collection_name,
         )
 
-        # Initialize VectorRetriever
+        # Create retriever (CAMEL's VectorRetriever)
         self.retriever = VectorRetriever(
             embedding_model=self.embedding_model,
             storage=self.storage,
@@ -109,187 +120,165 @@ class PaperRAG:
         model_type_filter: Optional[str] = None,
         similarity_threshold: Optional[float] = None,
     ) -> List[SearchResult]:
-        """Search for relevant paper chunks by semantic similarity.
+        """Search for relevant papers using CAMEL's embedding + Qdrant storage.
+
+        Uses CAMEL's embedding model but accesses Qdrant storage directly
+        to properly retrieve our custom metadata structure.
 
         Args:
             query: Query string for semantic search
             top_k: Number of results to return
-            section_filter: Filter by section type (METHODOLOGY, EXPERIMENTS, etc.)
+            section_filter: Filter by section type (FULL_PAPER, etc.)
             task_type_filter: Filter by task type (any-to-t, any-to-v)
-            model_type_filter: Filter by model modality (e.g., T→I)
+            model_type_filter: Filter by model modality (e.g., T->I, T->V)
             similarity_threshold: Override default similarity threshold
 
         Returns:
-            List of SearchResult objects sorted by similarity
+            List of SearchResult objects sorted by similarity score
         """
         threshold = similarity_threshold or self.similarity_threshold
 
         logger.info(
-            f"Searching with query='{query[:50]}...', top_k={top_k}, "
-            f"section_filter={section_filter}, task_type_filter={task_type_filter}, "
-            f"model_type_filter={model_type_filter}, threshold={threshold}"
+            f"Searching query='{query}', top_k={top_k}, "
+            f"filters: section={section_filter}, task={task_type_filter}, "
+            f"model={model_type_filter}, threshold={threshold}"
         )
 
-        # Build Qdrant filter conditions
-        filter_conditions = self._build_filter(
-            section_filter, task_type_filter, model_type_filter
-        )
-
-        # Always use direct Qdrant client for better control over metadata
         try:
-            results = self._search_with_filter(
-                query, top_k, threshold, filter_conditions
+            # Use CAMEL's embedding model to embed the query
+            query_vector = self.embedding_model.embed(obj=query, task="retrieval.query")
+
+            # Access Qdrant storage directly to get full payload
+            from camel.storages import VectorDBQuery
+            db_query = VectorDBQuery(query_vector=query_vector, top_k=top_k)
+            query_results = self.storage.query(query=db_query)
+
+            # Parse Qdrant results (these have full payload)
+            results = self._parse_storage_results(
+                query_results,
+                threshold=threshold,
+                section_filter=section_filter,
+                task_type_filter=task_type_filter,
+                model_type_filter=model_type_filter,
             )
 
-            logger.info(f"Found {len(results)} results above threshold {threshold}")
+            logger.info(f"Found {len(results)} results after filtering")
             return results
 
         except Exception as e:
-            logger.error(f"Search failed: {e}")
+            logger.error(f"Search failed: {e}", exc_info=True)
             return []
 
-    def _search_with_filter(
+    def _parse_storage_results(
         self,
-        query: str,
-        top_k: int,
+        query_results: List[Any],
         threshold: float,
-        filter_conditions: Optional[Filter],
+        section_filter: Optional[str] = None,
+        task_type_filter: Optional[str] = None,
+        model_type_filter: Optional[str] = None,
     ) -> List[SearchResult]:
-        """Execute filtered search using Qdrant client directly.
+        """Parse CAMEL QdrantStorage.query() results and apply filters.
 
         Args:
-            query: Query string
-            top_k: Number of results
-            threshold: Similarity threshold
-            filter_conditions: Qdrant filter object (or None for no filter)
+            query_results: List of VectorDBQueryResult from storage.query()
+            threshold: Similarity threshold to filter results
+            section_filter: Filter by section
+            task_type_filter: Filter by task type
+            model_type_filter: Filter by model type
 
         Returns:
-            List of SearchResult objects
-        """
-        # Embed the query
-        query_vector = self.embedding_model.embed(obj=query, task="retrieval.query")
-
-        # Search with filter using underlying Qdrant client
-        # Note: Access the private _client attribute from CAMEL's QdrantStorage
-        qdrant_client = self.storage._client
-
-        # Build search parameters
-        search_params = {
-            "collection_name": self.collection_name,
-            "query_vector": query_vector,
-            "limit": top_k,
-            "score_threshold": threshold,
-            "with_payload": True,  # Explicitly request payloads
-        }
-
-        # Only add filter if it's not None
-        if filter_conditions is not None:
-            search_params["query_filter"] = filter_conditions
-
-        search_results = qdrant_client.search(**search_params)
-
-        # Parse Qdrant results
-        results = []
-        for hit in search_results:
-            payload = hit.payload if hit.payload else {}
-
-            # Debug: Log if payload is empty
-            if not payload:
-                logger.warning(f"Empty payload for hit ID: {hit.id}")
-
-            result = SearchResult(
-                arxiv_id=payload.get("arxiv_id", "unknown"),
-                section=payload.get("section", "unknown"),
-                text=payload.get("text", ""),
-                similarity_score=float(hit.score),
-                task_type=payload.get("task_type", "unknown"),
-                attack_level=payload.get("attack_level", "unknown"),
-                model_type=payload.get("model_type", "unknown"),
-                paper_title=payload.get("paper_title", "unknown"),
-                card_path=payload.get("card_path", "unknown"),
-            )
-            results.append(result)
-
-        return results
-
-    def _parse_retriever_results(
-        self, retrieved_info: List[dict]
-    ) -> List[SearchResult]:
-        """Parse results from CAMEL VectorRetriever.
-
-        Args:
-            retrieved_info: List of dicts from VectorRetriever.query()
-
-        Returns:
-            List of SearchResult objects
+            Filtered list of SearchResult objects
         """
         results = []
-        for item in retrieved_info:
-            # Check for "no suitable information" message
-            if "No suitable information retrieved" in item.get("text", ""):
-                logger.debug("No suitable information found for query")
+
+        for result in query_results:
+            # Check similarity threshold
+            if result.similarity < threshold:
                 continue
 
-            metadata = item.get("metadata", {})
-            result = SearchResult(
-                arxiv_id=metadata.get("arxiv_id", "unknown"),
-                section=metadata.get("section", "unknown"),
-                text=item.get("text", ""),
-                similarity_score=float(item.get("similarity score", 0.0)),
-                task_type=metadata.get("task_type", "unknown"),
-                attack_level=metadata.get("attack_level", "unknown"),
-                model_type=metadata.get("model_type", "unknown"),
-                paper_title=metadata.get("paper_title", "unknown"),
-                card_path=metadata.get("card_path", "unknown"),
+            # Extract payload (our custom metadata)
+            payload = result.record.payload
+            if not payload:
+                logger.warning(f"Empty payload for result ID: {result.record.id}")
+                continue
+
+            # Extract metadata directly from payload
+            arxiv_id = payload.get("arxiv_id", "unknown")
+            section = payload.get("section", "unknown")
+            task_type = payload.get("task_type", "unknown")
+            attack_level = payload.get("attack_level", "unknown")
+            model_type = payload.get("model_type", "unknown")
+            paper_title = payload.get("paper_title", "unknown")
+            card_path = payload.get("card_path", "unknown")
+            text = payload.get("text", "")
+
+            # Apply metadata filters
+            if section_filter and section != section_filter:
+                continue
+            if task_type_filter and task_type != task_type_filter:
+                continue
+            if model_type_filter and model_type != model_type_filter:
+                continue
+
+            # Create SearchResult
+            search_result = SearchResult(
+                arxiv_id=arxiv_id,
+                section=section,
+                text=text,
+                similarity_score=float(result.similarity),
+                task_type=task_type,
+                attack_level=attack_level,
+                model_type=model_type,
+                paper_title=paper_title,
+                card_path=card_path,
+                metadata=payload,
             )
-            results.append(result)
+            results.append(search_result)
 
         return results
 
-    def _build_filter(
-        self,
-        section_filter: Optional[str],
-        task_type_filter: Optional[str],
-        model_type_filter: Optional[str],
-    ) -> Optional[Filter]:
-        """Build Qdrant filter from optional parameters.
+    def add_chunks(self, chunks: List[Dict[str, Any]]) -> None:
+        """Add paper chunks to the vector database using CAMEL's process() pattern.
+
+        This follows CAMEL's RAG cookbook approach for adding content.
 
         Args:
-            section_filter: Section type filter
-            task_type_filter: Task type filter
-            model_type_filter: Model modality filter
+            chunks: List of chunk dictionaries with 'text' and 'metadata' keys
 
-        Returns:
-            Qdrant Filter object or None if no filters
+        Example:
+            >>> chunks = [
+            ...     {
+            ...         "text": "Paper content...",
+            ...         "metadata": {
+            ...             "arxiv_id": "2505.11842",
+            ...             "section": "FULL_PAPER",
+            ...             "task_type": "any-to-v",
+            ...             ...
+            ...         }
+            ...     }
+            ... ]
+            >>> rag.add_chunks(chunks)
         """
-        conditions = []
+        logger.info(f"Adding {len(chunks)} chunks to vector database")
 
-        if section_filter:
-            conditions.append(
-                FieldCondition(key="section", match=MatchValue(value=section_filter))
-            )
+        for chunk in chunks:
+            text = chunk.get("text", "")
+            metadata = chunk.get("metadata", {})
 
-        if task_type_filter:
-            conditions.append(
-                FieldCondition(
-                    key="task_type", match=MatchValue(value=task_type_filter)
-                )
-            )
+            if not text:
+                logger.warning("Skipping chunk with empty text")
+                continue
 
-        if model_type_filter:
-            conditions.append(
-                FieldCondition(
-                    key="model_type", match=MatchValue(value=model_type_filter)
-                )
-            )
+            # Use CAMEL's VectorRetriever to store content
+            # This handles embedding and storage automatically
+            self.storage.save([text], [metadata])
 
-        if not conditions:
-            return None
+        logger.info(f"Successfully added {len(chunks)} chunks")
 
-        return Filter(must=conditions)
-
-    def get_paper_metadata(self, arxiv_id: str) -> Optional[dict]:
+    def get_paper_metadata(self, arxiv_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve metadata for a specific paper by ArXiv ID.
+
+        Uses Qdrant scroll to find exact matches by arxiv_id field.
 
         Args:
             arxiv_id: ArXiv identifier (e.g., "2505.11842")
@@ -297,27 +286,61 @@ class PaperRAG:
         Returns:
             Dictionary with paper metadata or None if not found
         """
-        # Search for any chunk from this paper
-        results = self._search_with_filter(
-            query=arxiv_id,  # Use arxiv_id as query
-            top_k=1,
-            threshold=0.0,  # No threshold for metadata lookup
-            filter_conditions=Filter(
-                must=[FieldCondition(key="arxiv_id", match=MatchValue(value=arxiv_id))]
-            ),
-        )
+        try:
+            # Use Qdrant scroll with filter for exact arxiv_id match
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-        if not results:
-            logger.warning(f"No metadata found for ArXiv ID: {arxiv_id}")
+            client = self.storage.client
+            scroll_result = client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="arxiv_id",
+                            match=MatchValue(value=arxiv_id),
+                        )
+                    ]
+                ),
+                limit=1,
+                with_payload=True,
+                with_vectors=False,
+            )
+
+            points = scroll_result[0]
+            if not points:
+                logger.warning(f"No paper found with ArXiv ID: {arxiv_id}")
+                return None
+
+            # Extract metadata from first matching point
+            payload = points[0].payload
+            return {
+                "arxiv_id": payload.get("arxiv_id"),
+                "paper_title": payload.get("paper_title"),
+                "task_type": payload.get("task_type"),
+                "attack_level": payload.get("attack_level"),
+                "model_type": payload.get("model_type"),
+                "card_path": payload.get("card_path"),
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get metadata for {arxiv_id}: {e}")
             return None
 
-        # Return metadata from first result
-        result = results[0]
-        return {
-            "arxiv_id": result.arxiv_id,
-            "paper_title": result.paper_title,
-            "task_type": result.task_type,
-            "attack_level": result.attack_level,
-            "model_type": result.model_type,
-            "card_path": result.card_path,
-        }
+    def get_collection_info(self) -> Dict[str, Any]:
+        """Get information about the current collection.
+
+        Returns:
+            Dictionary with collection stats (name, vector count, etc.)
+        """
+        try:
+            client = self.storage.client
+            collection_info = client.get_collection(self.collection_name)
+            return {
+                "collection_name": self.collection_name,
+                "vectors_count": collection_info.vectors_count,
+                "points_count": collection_info.points_count,
+                "status": collection_info.status,
+            }
+        except Exception as e:
+            logger.error(f"Failed to get collection info: {e}")
+            return {"error": str(e)}

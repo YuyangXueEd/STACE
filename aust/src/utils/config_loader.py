@@ -1,7 +1,7 @@
 """
 Configuration loader for hypothesis generation.
 
-Loads seed templates, prompts, and other configuration from YAML files.
+Loads task templates (previously referred to as seed templates), prompts, and other configuration from YAML files.
 """
 
 import random
@@ -34,25 +34,25 @@ class ConfigLoader:
         logger.info(f"ConfigLoader initialized with config_dir: {self.config_dir}")
 
         # Cache loaded configs
-        self._seed_templates_cache: dict[str, dict] = {}
+        self._task_templates_cache: dict[str, dict] = {}
         self._prompts_cache: dict[str, dict] = {}
 
-    def load_seed_templates(self, task_type: str) -> dict[str, Any]:
+    def load_task_templates(self, task_type: str) -> dict[str, Any]:
         """
-        Load seed templates for a task type.
+        Load task templates for a task type.
 
         Args:
             task_type: Task type (e.g., "data_based_unlearning", "concept_erasure")
 
         Returns:
-            Dictionary with seed templates configuration
+            Dictionary with task template configuration
 
         Raises:
             FileNotFoundError: If template file doesn't exist
             ValueError: If template file is invalid
         """
-        if task_type in self._seed_templates_cache:
-            return self._seed_templates_cache[task_type]
+        if task_type in self._task_templates_cache:
+            return self._task_templates_cache[task_type]
 
         template_file = self.config_dir / "tasks" / f"{task_type}.yaml"
 
@@ -62,7 +62,7 @@ class ConfigLoader:
                 f"Available task types: {self.get_available_task_types()}"
             )
 
-        logger.info(f"Loading seed templates from {template_file}")
+        logger.info(f"Loading task templates from {template_file}")
 
         try:
             with open(template_file, 'r', encoding='utf-8') as f:
@@ -77,53 +77,53 @@ class ConfigLoader:
             if not seed_templates:
                 # Fallback: load from starter template only
                 logger.warning(
-                    "No seed templates defined in %s; falling back to starter_template.yaml",
+                    "No task templates defined in %s; falling back to starter_template.yaml",
                     template_file,
                 )
-                config["seed_templates"] = self._load_starter_seed_templates()
+                config["seed_templates"] = self._load_starter_task_templates()
             else:
                 config["seed_templates"] = seed_templates
 
             # Cache and return
-            self._seed_templates_cache[task_type] = config
+            self._task_templates_cache[task_type] = config
             logger.info(
-                f"Loaded {len(config['seed_templates'])} seed templates for {task_type}"
+                f"Loaded {len(config['seed_templates'])} task templates for {task_type}"
             )
             return config
 
         except yaml.YAMLError as e:
             raise ValueError(f"Failed to parse YAML file {template_file}: {e}") from e
         except Exception as e:
-            raise ValueError(f"Failed to load seed templates: {e}") from e
+            raise ValueError(f"Failed to load task templates: {e}") from e
 
-    def get_seed_template(
+    def get_task_template(
         self,
         task_type: str,
         iteration: int,
     ) -> Optional[dict]:
         """
-        Get a seed template for hypothesis generation.
+        Get a task template for hypothesis generation.
 
         Args:
             task_type: Task type (e.g., "data_based_unlearning")
             iteration: Current iteration number (1-indexed)
 
         Returns:
-            Selected seed template dict, or None if no template should be used
+            Selected task template dict, or None if no template should be used
 
         Raises:
             ValueError: If required templates are not available
         """
-        # Only use seed templates for iteration 1
+        # Only use task templates for iteration 1
         if iteration != 1:
-            logger.debug(f"No seed template for iteration {iteration} (only iter 1)")
+            logger.debug(f"No task template for iteration {iteration} (only iter 1)")
             return None
 
-        config = self.load_seed_templates(task_type)
+        config = self.load_task_templates(task_type)
         templates = config["seed_templates"]
 
         if not templates:
-            raise ValueError(f"No seed templates available for task type '{task_type}'")
+            raise ValueError(f"No task templates available for task type '{task_type}'")
 
         # Check if template_selection specifies a specific template for iteration 1
         template_selection = config.get("template_selection", {})
@@ -132,22 +132,22 @@ class ConfigLoader:
             if template_id:
                 for template in templates:
                     if template.get("id") == template_id:
-                        logger.info(f"Selected specific seed template for iteration 1: {template_id}")
+                        logger.info(f"Selected specific task template for iteration 1: {template_id}")
                         return template
                 raise ValueError(
                     f"Configured template id '{template_id}' not found for task type '{task_type}'."
                 )
 
         template = random.choice(templates)
-        logger.info(f"Selected seed template: {template.get('id', 'unknown')}")
+        logger.info(f"Selected task template: {template.get('id', 'unknown')}")
         return template
 
-    def _load_starter_seed_templates(self) -> list[dict]:
-        """Load seed templates from starter_template.yaml."""
+    def _load_starter_task_templates(self) -> list[dict]:
+        """Load task templates from starter_template.yaml."""
         starter_path = self.config_dir / "prompts" / "starter_template.yaml"
         if not starter_path.exists():
             raise ValueError(
-                "Starter seed template not found; provide at least one template in starter_template.yaml"
+                "Starter task template not found; provide at least one template in starter_template.yaml"
             )
 
         with open(starter_path, "r", encoding="utf-8") as starter_file:
@@ -162,7 +162,7 @@ class ConfigLoader:
 
         starter_id = starter_template.get("id") or "starter_template"
         logger.info(
-            "Loaded starter seed template '%s' from %s",
+            "Loaded starter task template '%s' from %s",
             starter_id,
             starter_path,
         )
@@ -171,7 +171,7 @@ class ConfigLoader:
 
     def get_available_task_types(self) -> list[str]:
         """
-        Get list of available task types with seed templates.
+        Get list of available task types that define templates.
 
         Returns:
             List of task type names (without .yaml extension)
@@ -243,14 +243,24 @@ class ConfigLoader:
 
     def get_available_agents(self) -> list[str]:
         """
-        Get list of agents with prompt configurations.
+        Get list of available agent implementations.
 
         Returns:
-            List of agent names (without .yaml extension)
+            List of agent module names (without file extension)
         """
-        prompts_dir = self.config_dir / "prompts"
-        if not prompts_dir.exists():
+        agents_dir = Path(__file__).parent.parent / "agents"
+        if not agents_dir.exists():
             return []
 
-        prompt_files = prompts_dir.glob("*.yaml")
-        return [f.stem for f in prompt_files]
+        agent_names: set[str] = set()
+        for path in agents_dir.iterdir():
+            if path.is_file() and path.suffix == ".py" and path.stem != "__init__":
+                agent_names.add(path.stem)
+            elif path.is_dir() and (path / "__init__.py").exists():
+                agent_names.add(path.name)
+
+        return sorted(agent_names)
+
+
+__all__ = ["ConfigLoader"]
+

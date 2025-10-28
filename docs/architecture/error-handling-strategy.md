@@ -24,7 +24,7 @@
   {
     "timestamp": "2025-10-16T12:34:56.789Z",
     "level": "ERROR",
-    "logger": "loop.inner_loop_orchestrator",
+    "logger": "agents.inner_loop_orchestrator",
     "message": "Experiment execution failed",
     "correlation_id": "task-001-iter-3",
     "service": "AUST",
