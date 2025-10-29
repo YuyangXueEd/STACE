@@ -1,0 +1,38 @@
+# Code Synthesizer Model Configuration
+#
+# Uses locally deployed Ollama instance with qwen3-coder:latest model
+# for code generation and repair tasks.
+#
+# Model capabilities:
+# - 480B parameters for advanced reasoning and complex code generation
+# - 256k context window - enables keeping full synthesis → execute → repair history
+#   in a single conversation, improving repair quality through context continuity
+
+model_name: "qwen3-coder:latest"
+model_platform: "ollama"
+base_url: "http://localhost:11434/v1"
+requires_api_key: false
+
+config:
+  # Model parameters
+  temperature: 0.2  # Low temperature for more deterministic code generation
+  max_tokens: 32000  # Increased for larger model capacity and complex code artifacts
+
+  # Ollama-specific settings (if needed)
+  # Note: These may vary based on CAMEL's OllamaModel implementation
+  # Refer to external/camel/docs/reference/camel.models.ollama_model for details
+
+  # Code generation optimizations
+  top_p: 0.9
+  frequency_penalty: 0.0
+  presence_penalty: 0.0
+
+# Metadata
+metadata:
+  deployment: "local"
+  model_size: "480B parameters"
+  context_window: "256k tokens"
+  description: "Ollama-hosted Qwen3 Coder 480B for concept-erasure attack code synthesis and repair"
+  use_case: "Code generation and repair for diffusion model security research"
+  architecture_decision: "Single agent handles both synthesis and repair for context continuity"
+  last_updated: "2025-10-28"

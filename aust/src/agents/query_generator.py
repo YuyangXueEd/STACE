@@ -28,6 +28,7 @@ from camel.types import ModelPlatformType
 from pydantic import BaseModel, Field
 
 from aust.src.utils.logging_config import get_logger
+from aust.src.utils.markdown_parser import extract_markdown_sections
 from aust.src.utils.model_config import load_model_settings
 from aust.src.data_models import CriticFeedback, Hypothesis
 from aust.src.rag.vector_db import PaperRAG, SearchResult
@@ -123,7 +124,6 @@ class QueryCandidate:
 
     query: str
     target_collection: Optional[str] = None
-    focus_sections: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -133,7 +133,6 @@ class QuerySearchResult:
     query: str
     target_collection: Optional[str]
     results: list[SearchResult] = field(default_factory=list)
-    focus_sections: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -150,7 +149,6 @@ class QueryGenerationResult:
                 {
                     "query": entry.query,
                     "target_collection": entry.target_collection,
-                    "focus_sections": entry.focus_sections,
                     "results": [
                         {
                             "arxiv_id": res.arxiv_id,
@@ -180,10 +178,6 @@ class QueryItemModel(BaseModel):
         default=None,
         description="Preferred Qdrant collection (e.g., aust_papers_any_to_v)",
     )
-    focus_sections: list[str] = Field(
-        default_factory=list,
-        description="List of paper card sections to prioritize",
-    )
 
 
 class QueryResponseModel(BaseModel):
@@ -199,7 +193,7 @@ class QueryGeneratorAgent:
     """LLM-assisted query generator for PaperRAG searches."""
 
     DEFAULT_MODEL = _DEFAULT_QUERY_MODEL
-    DEFAULT_MAX_QUERIES = 3
+    DEFAULT_MAX_QUERIES = 5  # Increased from 3 to allow more diverse queries
     DEFAULT_TOP_K = 5
     MAX_KEYWORD_TERMS = 2
 
@@ -420,44 +414,6 @@ class QueryGeneratorAgent:
 
         return "\n".join(lines)
 
-    def _normalize_focus_sections(
-        self, sections: Optional[Sequence[str]]
-    ) -> list[Optional[str]]:
-        if not sections:
-            return []
-
-        normalized: list[Optional[str]] = []
-        seen: set[Optional[str]] = set()
-        for raw in sections:
-            if raw is None:
-                continue
-            candidate = str(raw).strip()
-            if not candidate:
-                continue
-            key = candidate.lower().replace(" ", "_").replace("-", "_")
-            mapped = SECTION_ALIAS_MAP.get(key)
-            if mapped:
-                section_value: Optional[str] = mapped
-            else:
-                upper = candidate.upper().replace(" ", "_").replace("-", "_")
-                section_value = upper if upper in KNOWN_SECTIONS else None
-
-            if section_value not in seen:
-                seen.add(section_value)
-                normalized.append(section_value)
-
-        return normalized
-
-    @staticmethod
-    def _coerce_focus_sections(value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [value]
-        if isinstance(value, Sequence):
-            return [str(item) for item in value if str(item).strip()]
-        return []
-
     def _enforce_keyword_query_style(
         self, candidates: Sequence[QueryCandidate]
     ) -> list[QueryCandidate]:
@@ -480,7 +436,6 @@ class QueryGeneratorAgent:
                     QueryCandidate(
                         query=fragment,
                         target_collection=candidate.target_collection,
-                        focus_sections=list(candidate.focus_sections),
                     )
                 )
                 if len(normalized) >= self.max_queries:
@@ -491,7 +446,6 @@ class QueryGeneratorAgent:
                 QueryCandidate(
                     query=candidate.query.strip(),
                     target_collection=candidate.target_collection,
-                    focus_sections=list(candidate.focus_sections),
                 )
                 for candidate in candidates
                 if candidate.query.strip()
@@ -529,8 +483,9 @@ class QueryGeneratorAgent:
         if not cleaned:
             return fragments
 
-        for chunk in cleaned.split(" "):
-            fragments.extend(self._normalize_keyword_phrase(chunk))
+        # Don't split by space - keep the phrase intact (up to MAX_KEYWORD_TERMS words)
+        # This preserves multi-word queries like "latent transplantation" or "pseudo token"
+        fragments.extend(self._normalize_keyword_phrase(cleaned))
 
         deduped: list[str] = []
         seen: set[str] = set()
@@ -719,12 +674,10 @@ class QueryGeneratorAgent:
             if not query_text:
                 continue
             target_collection = (item or {}).get("target_collection")
-            focus_sections = self._coerce_focus_sections((item or {}).get("focus_sections"))
             candidates.append(
                 QueryCandidate(
                     query=query_text.strip(),
                     target_collection=str(target_collection).strip() if target_collection else None,
-                    focus_sections=focus_sections,
                 )
             )
 
@@ -745,9 +698,6 @@ class QueryGeneratorAgent:
             normalized_collection = self._normalize_collection_name(
                 candidate.target_collection, default_collection
             )
-            focus_sections = self._normalize_focus_sections(candidate.focus_sections)
-            # Disable section filtering - search full papers only
-            # section_filters = focus_sections or [None]
 
             task_type_filter = self._collection_to_task_type(normalized_collection)
 
@@ -773,7 +723,6 @@ class QueryGeneratorAgent:
                 QuerySearchResult(
                     query=candidate.query,
                     target_collection=normalized_collection,
-                    focus_sections=[section for section in focus_sections if section],
                     results=deduped_results[: self.top_k],
                 )
             )
@@ -783,7 +732,21 @@ class QueryGeneratorAgent:
     def _flatten_results(
         self, search_results: Sequence[QuerySearchResult]
     ) -> list[dict[str, Any]]:
-        """Flatten search results into list of dictionaries for HypothesisContext."""
+        """Flatten search results into list of dictionaries for HypothesisContext.
+
+        Extracts only the priority sections from paper cards as specified in
+        hypothesis_generator prompts: SUMMARY, CORE_METHOD, ALGORITHM_APPROACH,
+        IMPLEMENTATION, and ATTACK_METHODS.
+        """
+        # Priority sections to extract from paper cards
+        PRIORITY_SECTIONS = [
+            "SUMMARY",
+            "CORE_METHOD",
+            "ALGORITHM_APPROACH",
+            "IMPLEMENTATION",
+            "ATTACK_METHODS",
+        ]
+
         flattened: list[dict[str, Any]] = []
         seen_keys: set[tuple[str, str]] = set()
 
@@ -793,19 +756,29 @@ class QueryGeneratorAgent:
                 if key in seen_keys:
                     continue
                 seen_keys.add(key)
+
+                # Extract only priority sections from the full paper card markdown
+                extracted_text = extract_markdown_sections(
+                    result.text,
+                    PRIORITY_SECTIONS,
+                    case_sensitive=False,
+                )
+
+                # If extraction produces no content, fall back to first 500 chars of original
+                summary_text = extracted_text if extracted_text.strip() else result.text[:500]
+
                 flattened.append(
                     {
                         "title": result.paper_title,
                         "arxiv_id": result.arxiv_id,
                         "section": result.section,
                         "relevance_score": result.similarity_score,
-                        "summary": result.text,
+                        "summary": summary_text,
                         "task_type": result.task_type,
                         "attack_level": result.attack_level,
                         "model_type": result.model_type,
                         "source_query": entry.query,
                         "target_collection": entry.target_collection,
-                        "focus_sections": entry.focus_sections,
                     }
                 )
 
@@ -913,12 +886,10 @@ class QueryGeneratorAgent:
             if not query_text:
                 continue
             target_collection = item_dict.get("target_collection")
-            focus_sections = self._coerce_focus_sections(item_dict.get("focus_sections"))
             candidates.append(
                 QueryCandidate(
                     query=query_text,
                     target_collection=str(target_collection).strip() if target_collection else None,
-                    focus_sections=focus_sections,
                 )
             )
 

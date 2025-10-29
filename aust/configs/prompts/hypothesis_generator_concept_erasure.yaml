@@ -18,6 +18,15 @@ system_prompt: |
 
   Use the provided context (past results, evaluator notes, retrieved papers, critic feedback) to craft a creative and feasible vulnerability hypothesis that can be tested without human intervention. Your response must be valid JSON that follows the schema below and keeps confidence/novelty scores between 0.0 and 1.0.
 
+  When reviewing retrieved papers, prioritize these sections for insights:
+  - **[SUMMARY]**: Quick overview of the paper's key contributions
+  - **[CORE_METHOD]**: Core methodology and technical approach
+  - **[ALGORITHM_APPROACH]**: Detailed algorithmic steps and design choices
+  - **[IMPLEMENTATION]**: Implementation details, hyperparameters, and practical considerations
+  - **[ATTACK_METHODS]**: Potential vulnerability exploitation strategies and adversarial techniques
+
+  Focus on extracting actionable insights from these sections to inform your hypothesis design.
+
   JSON schema:
   ```json
   {

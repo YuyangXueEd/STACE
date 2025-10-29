@@ -9,10 +9,10 @@ files raise explicit errors.
 Workflow summary:
 1. Iteration 1 seeds a hypothesis directly from the starter template.
 2. Subsequent iterations run a multi-round debate loop:
-   - Generate hypothesis from the task prompt.
-   - Submit hypothesis JSON to the critic.
+   - The critic evaluates the latest hypothesis from the prior round.
    - Feed critic feedback into the query generator to pull focused RAG evidence.
    - Regenerate a refined hypothesis with the new evidence and critic guidance.
+   - Each round therefore concludes on a generator update with a refined hypothesis ready for the next critique.
    - Repeat until the configured debate round budget is exhausted.
 3. Critic feedback and retrieval trails are persisted for upstream orchestration.
 """
@@ -45,6 +45,7 @@ from aust.src.data_models import (
     HypothesisContext,
 )
 from aust.src.utils.logging_config import get_logger
+from aust.src.utils.markdown_parser import extract_paper_card_sections
 
 load_dotenv()
 logger = get_logger(__name__)
@@ -93,6 +94,17 @@ class HypothesisRefinementWorkforce:
 
     DEFAULT_GENERATOR_MODEL = _GENERATOR_SETTINGS["model_name"]
     DEFAULT_CRITIC_MODEL = _CRITIC_SETTINGS["model_name"]
+
+    # Sections to extract from paper cards when rendering retrieved papers
+    # This reduces token usage by excluding verbose sections like full experiments/results
+    PAPER_CARD_SECTIONS_TO_EXTRACT = [
+        "METADATA",
+        "SUMMARY",
+        "CORE_METHOD",
+        "ALGORITHM_APPROACH",
+        "IMPLEMENTATION",
+        "ATTACK_METHODS",
+    ]
 
     def __init__(
         self,
@@ -160,13 +172,15 @@ class HypothesisRefinementWorkforce:
         *,
         enable_debate: bool = True,
         debate_rounds: Optional[int] = None,
+        starting_hypothesis: Optional[Hypothesis] = None,
         query_generator: Optional[QueryGeneratorAgent] = None,
     ) -> tuple[Hypothesis, DebateSession]:
         """
         Generate a hypothesis and optional debate session output.
 
         The first iteration always uses the starter template without a critic debate.
-        Later iterations run a configurable number of generator -> critic -> query loops.
+        Later iterations run a configurable number of critic -> query -> generator loops
+        seeded by the latest available hypothesis.
         """
         task_type = self._context_task_type(context)
         iteration = context.iteration_number
@@ -213,57 +227,73 @@ class HypothesisRefinementWorkforce:
 
         working_context = self._clone_context(context)
         latest_feedback: Optional[CriticFeedback] = None
-        previous_exchange: Optional[DebateExchange] = None
         final_hypothesis: Optional[Hypothesis] = None
+        current_hypothesis: Optional[Hypothesis] = None
+        current_payload: Optional[dict[str, Any]] = None
 
-        for round_number in range(1, rounds_budget + 1):
-            stage = "initial" if round_number == 1 else "refinement"
-            user_prompt = self._build_generator_prompt(
+        if starting_hypothesis is not None:
+            current_hypothesis = starting_hypothesis
+            current_payload = self._hypothesis_to_payload(starting_hypothesis)
+            final_hypothesis = starting_hypothesis
+
+        if current_hypothesis is None:
+            # No prior hypothesis available; generate an initial draft before critique
+            initial_prompt = self._build_generator_prompt(
                 context=working_context,
                 task_type=task_type,
-                stage=stage,
-                critic_feedback=latest_feedback,
+                stage="initial",
+                critic_feedback=None,
             )
-            payload = self._invoke_generator(task_type=task_type, user_prompt=user_prompt)
-            hypothesis = self._hydrate_hypothesis(
+            payload = self._invoke_generator(
+                task_type=task_type,
+                user_prompt=initial_prompt,
+            )
+            initial_hypothesis = self._hydrate_hypothesis(
                 payload=payload,
                 context=working_context,
-                stage=stage,
-                latest_feedback=latest_feedback,
+                stage="initial",
+                latest_feedback=None,
             )
-            final_hypothesis = hypothesis
+            current_hypothesis = initial_hypothesis
+            current_payload = payload
+            final_hypothesis = initial_hypothesis
 
-            if previous_exchange is not None:
-                previous_exchange.refined_hypothesis = hypothesis
+        for round_number in range(1, rounds_budget + 1):
+            if current_hypothesis is None or current_payload is None:
+                raise RuntimeError(
+                    "Debate loop requires an existing hypothesis for critic review"
+                )
+
+            previous_feedback = latest_feedback
+            critique_target = current_hypothesis
 
             critic_feedback = self._invoke_critic(
                 task_type=task_type,
-                generator_payload=payload,
+                generator_payload=current_payload,
             )
 
             exchange = DebateExchange(
                 round_number=round_number,
-                initial_hypothesis=hypothesis,
+                initial_hypothesis=critique_target,
                 critic_feedback=critic_feedback,
                 refined_hypothesis=None,
                 generator_model=self.generator_model,
                 critic_model=self.critic_model,
             )
-            if latest_feedback is not None:
+            if previous_feedback is not None:
                 exchange.improvement_delta = (
-                    critic_feedback.average_score - latest_feedback.average_score
+                    critic_feedback.average_score - previous_feedback.average_score
                 )
 
             session.exchanges.append(exchange)
-            previous_exchange = exchange
             latest_feedback = critic_feedback
 
-            should_query = query_generator is not None and round_number < rounds_budget
+            should_query = query_generator is not None
             if should_query:
                 rag_queries, retrieved_papers = self._invoke_query_generator(
                     query_generator=query_generator,
                     context=working_context,
-                    hypothesis=hypothesis,
+                    hypothesis=critique_target,
                     critic_feedback=critic_feedback,
                 )
                 if rag_queries:
@@ -275,6 +305,28 @@ class HypothesisRefinementWorkforce:
                         new_papers=retrieved_papers,
                         existing=working_context.retrieved_papers,
                     )
+
+            refinement_prompt = self._build_generator_prompt(
+                context=working_context,
+                task_type=task_type,
+                stage="refinement",
+                critic_feedback=critic_feedback,
+            )
+            payload = self._invoke_generator(
+                task_type=task_type,
+                user_prompt=refinement_prompt,
+            )
+            refined_hypothesis = self._hydrate_hypothesis(
+                payload=payload,
+                context=working_context,
+                stage="refinement",
+                latest_feedback=critic_feedback,
+            )
+            exchange.refined_hypothesis = refined_hypothesis
+            final_hypothesis = refined_hypothesis
+
+            current_hypothesis = refined_hypothesis
+            current_payload = payload
 
         final_feedback = latest_feedback
         session.total_rounds = len(session.exchanges)
@@ -385,6 +437,18 @@ class HypothesisRefinementWorkforce:
                 dict(context) if isinstance(context, dict) else context
                 for context in exchange.retrieval_context
             ],
+        }
+
+    @staticmethod
+    def _hypothesis_to_payload(hypothesis: Hypothesis) -> dict[str, Any]:
+        """Convert a Hypothesis model into the payload expected by the critic."""
+        return {
+            "attack_type": hypothesis.attack_type,
+            "description": hypothesis.description,
+            "experiment_design": hypothesis.experiment_design,
+            "target_type": hypothesis.target_type,
+            "confidence_score": hypothesis.confidence_score,
+            "novelty_score": hypothesis.novelty_score,
         }
 
     @staticmethod
@@ -678,16 +742,28 @@ class HypothesisRefinementWorkforce:
             score_text = f"{float(score):.2f}" if isinstance(score, (int, float)) else "N/A"
             lines.append(f"{idx}. {title} (score {score_text})")
 
-            detail_map = {
-                "Quick Summary": paper.get("quick_summary") or paper.get("summary"),
-                "Methodology": paper.get("methodology"),
-                "Implementation Details": paper.get("implementation_details"),
-                "Potential Attack Methods": paper.get("potential_attack_methods"),
-            }
-            for heading, value in detail_map.items():
-                normalized = self._normalize_text(value)
-                if normalized:
-                    lines.append(f"   - {heading}: {normalized}")
+            # Try to extract specific sections from the paper card markdown
+            # This reduces token usage by excluding verbose sections
+            extracted_sections = extract_paper_card_sections(
+                paper, self.PAPER_CARD_SECTIONS_TO_EXTRACT
+            )
+
+            if extracted_sections:
+                # Successfully extracted selected sections from full paper card
+                lines.append(f"   - Quick Summary: {extracted_sections}")
+            else:
+                # Fallback to the old approach if extraction fails
+                # This handles papers that don't have full markdown cards
+                detail_map = {
+                    "Quick Summary": paper.get("quick_summary") or paper.get("summary"),
+                    "Methodology": paper.get("methodology"),
+                    "Implementation Details": paper.get("implementation_details"),
+                    "Potential Attack Methods": paper.get("potential_attack_methods"),
+                }
+                for heading, value in detail_map.items():
+                    normalized = self._normalize_text(value)
+                    if normalized:
+                        lines.append(f"   - {heading}: {normalized}")
         return "\n".join(lines) + "\n"
 
     def _render_memory_entries(self, context: HypothesisContext) -> str:

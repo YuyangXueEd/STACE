@@ -1,0 +1,35 @@
+# ImageToolkit Evaluator Model Configuration
+#
+# Used by ImageAnalysisToolkit for cross-validation in MLLM evaluation.
+# This model provides a second opinion alongside the primary MLLM agent,
+# enabling true cross-validation with diverse model perspectives.
+#
+# Dual-VLM Strategy:
+# - MLLM Agent: openai/gpt-5-nano (fast, cost-effective primary detection)
+# - ImageToolkit: qwen/qwen2.5-vl-32b-instruct:free (larger, free cross-validation)
+
+model_name: "qwen/qwen2.5-vl-32b-instruct:free"
+
+config:
+  # Model parameters
+  temperature: 0.0  # Deterministic for consistent cross-validation
+  max_tokens: 800   # Sufficient for detection response
+
+  # Vision-specific settings
+  # Qwen 2.5 VL has strong vision-language understanding
+  # 32B params provide better visual reasoning than smaller models
+
+# Metadata
+metadata:
+  deployment: "deepseek_free"
+  model_size: "32B parameters"
+  context_window: "32k tokens"
+  description: "Qwen 2.5 VL for ImageAnalysisToolkit cross-validation in concept leakage detection"
+  use_case: "Secondary VLM detector for dual-model validation strategy"
+  advantages:
+    - "Free via DeepSeek (no API costs)"
+    - "Larger model (32B) for better vision understanding"
+    - "Different architecture from gpt-5-nano for true cross-validation"
+    - "Strong multilingual and multimodal capabilities"
+  cross_validation_partner: "mllm_assessment_agent (gpt-5-nano)"
+  last_updated: "2025-10-28"

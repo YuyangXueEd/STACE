@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from aust.src.agents.code_synthesizer import CodeSynthesizerAgent
 from aust.src.agents.hypothesis_workforce import HypothesisRefinementWorkforce
 from aust.src.agents.query_generator import QueryGeneratorAgent
 from aust.src.utils.logging_config import get_logger
@@ -73,7 +74,7 @@ class InnerLoopOrchestrator:
         max_debate_iterations: int = 3, # how many rounds of self-improving CoT
         # Query generator configuration
         query_generator_model: Optional[str] = None,
-        query_max_queries: int = 3,
+        query_max_queries: int = 5,  # Increased from 3 to allow more diverse queries
     ):
         """
         Initialize Inner Loop Orchestrator.
@@ -179,6 +180,16 @@ class InnerLoopOrchestrator:
             max_iterations=max_debate_iterations,
         )
         logger.info("Hypothesis Refinement Workforce initialized")
+
+        # Initialize code synthesizer agent (Story 1.6a)
+        logger.info("Initializing Code Synthesizer Agent")
+        self.code_synthesizer = CodeSynthesizerAgent(
+            execution_timeout=15 * 60,  # 15 minutes default timeout
+            max_retries=3,  # Default 3 repair attempts
+            output_dir=self.output_dir,
+            require_confirm=False,  # No confirmation in automated mode
+        )
+        logger.info("Code Synthesizer Agent initialized")
 
         logger.info(f"InnerLoopOrchestrator initialized for task {self.task_id}")
 
@@ -404,10 +415,17 @@ class InnerLoopOrchestrator:
 
         # Step 2: Generate and refine hypothesis
         logger.info("Step 2: Generating hypothesis with debate")
+        starting_hypothesis = None
+        if iteration_number > 1:
+            previous_iteration = self.state.latest_iteration
+            if previous_iteration is not None:
+                starting_hypothesis = previous_iteration.hypothesis
+
         hypothesis, debate_session = self.workforce.generate_refined_hypothesis(
             context=context,
             enable_debate=self.state.enable_debate and iteration_number > 1,
             debate_rounds=self.workforce.max_iterations,
+            starting_hypothesis=starting_hypothesis,
             query_generator=(
                 self.query_generator if iteration_number > 1 else None
             ),
@@ -430,9 +448,9 @@ class InnerLoopOrchestrator:
         # Append hypothesis to attack trace
         self._append_hypothesis_to_trace(hypothesis, debate_session)
 
-        # Step 3: Execute experiment (Story 1.6a - placeholder)
-        logger.info("Step 3: Executing experiment (PLACEHOLDER)")
-        experiment_results = self._execute_experiment_placeholder(hypothesis)
+        # Step 3: Execute experiment (Story 1.6a)
+        logger.info("Step 3: Executing experiment with CodeSynthesizer")
+        experiment_results = self._execute_experiment(hypothesis, iteration_number)
         experiment_executed = experiment_results is not None
 
         if experiment_results:
@@ -593,30 +611,93 @@ class InnerLoopOrchestrator:
                 paper_ids.append(str(candidate))
         return paper_ids
 
-    def _execute_experiment_placeholder(self, hypothesis) -> Optional[dict]:
+    def _execute_experiment(self, hypothesis, iteration_number: int) -> Optional[dict]:
         """
-        Placeholder for experiment execution (Story 1.6a).
+        Execute concept-erasure attack experiment using CodeSynthesizer (Story 1.6a).
 
-        In the full implementation, this would:
-        - Translate hypothesis to experiment configuration
-        - Execute attack using appropriate toolkit
-        - Collect metrics and results
+        This implements Step 3 of the inner loop:
+        1. Takes refined hypothesis from Step 2
+        2. Synthesizes executable Python code
+        3. Executes code in sandboxed environment
+        4. Repairs code on failure (up to max_retries attempts)
+        5. Returns results for Step 4 (evaluation)
 
         Args:
-            hypothesis: Hypothesis to test
+            hypothesis: Refined hypothesis from Step 2
+            iteration_number: Current iteration number
 
         Returns:
-            Experiment results dictionary
+            Experiment results dictionary with code synthesis and execution details
         """
-        logger.info(f"  [PLACEHOLDER] Would execute: {hypothesis.attack_type}")
-        logger.info(f"  [PLACEHOLDER] Hypothesis description: {hypothesis.description}")
+        logger.info(f"  Executing experiment for hypothesis: {hypothesis.attack_type}")
+        logger.info(f"  Hypothesis description: {hypothesis.description[:100]}...")
 
-        # Simulate experiment result
-        return {
-            "summary": "Experiment not executed (placeholder)",
-            "metrics": {},
-            "success": False,
-        }
+        try:
+            # Run code-repair-execute loop
+            repair_history, final_artifact, final_run_result = (
+                self.code_synthesizer.synthesize_and_execute(
+                    hypothesis=hypothesis,
+                    task_spec=self.task_spec,
+                    task_id=self.task_id,
+                    iteration_number=iteration_number,
+                )
+            )
+
+            # Build results dictionary
+            results = {
+                "summary": (
+                    f"Code synthesis and execution completed "
+                    f"(attempts={repair_history.current_attempt}, "
+                    f"success={repair_history.is_success})"
+                ),
+                "success": repair_history.is_success,
+                "repair_history": {
+                    "total_attempts": repair_history.current_attempt,
+                    "max_attempts": repair_history.max_attempts,
+                    "is_success": repair_history.is_success,
+                    "duration_seconds": repair_history.duration_seconds,
+                },
+                "final_artifact": {
+                    "artifact_id": final_artifact.artifact_id if final_artifact else None,
+                    "repair_attempt": final_artifact.repair_attempt if final_artifact else 0,
+                    "status": final_artifact.status.value if final_artifact else None,
+                    "code_length": len(final_artifact.code) if final_artifact else 0,
+                }
+                if final_artifact
+                else None,
+                "final_run_result": {
+                    "run_id": final_run_result.run_id if final_run_result else None,
+                    "status": final_run_result.status.value if final_run_result else None,
+                    "exit_code": final_run_result.exit_code if final_run_result else None,
+                    "duration_seconds": final_run_result.duration_seconds,
+                    "stdout_length": len(final_run_result.stdout) if final_run_result else 0,
+                    "stderr_length": len(final_run_result.stderr) if final_run_result else 0,
+                    "error_summary": final_run_result.error_summary if final_run_result else None,
+                }
+                if final_run_result
+                else None,
+                "metrics": {},  # Will be populated by evaluator in Step 4
+            }
+
+            logger.info(
+                f"  Experiment execution complete: success={repair_history.is_success}, "
+                f"attempts={repair_history.current_attempt}"
+            )
+
+            return results
+
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error(
+                "Experiment execution failed with exception: %s",
+                exc,
+                exc_info=True,
+            )
+            return {
+                "summary": f"Experiment execution failed: {str(exc)}",
+                "success": False,
+                "error": str(exc),
+                "metrics": {},
+            }
 
     def _evaluate_results_placeholder(
         self, hypothesis, experiment_results

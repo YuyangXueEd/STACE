@@ -5,6 +5,13 @@ The package exposes logical groupings so each agent can import only what it need
 while keeping all schemas colocated under `src/data_models`.
 """
 
+from aust.src.data_models.code_synthesis import (
+    CodeArtifact,
+    CodeArtifactStatus,
+    CodeRepairHistory,
+    ExecutionStatus,
+    RunResult,
+)
 from aust.src.data_models.critic import CriticFeedback
 from aust.src.data_models.debate import DebateExchange, DebateSession
 from aust.src.data_models.hypothesis import Hypothesis, HypothesisContext
@@ -16,14 +23,19 @@ from aust.src.data_models.loop_state import (
 from aust.src.data_models.task_spec import TaskSpec
 
 __all__ = [
+    "CodeArtifact",
+    "CodeArtifactStatus",
+    "CodeRepairHistory",
     "CriticFeedback",
     "DebateExchange",
     "DebateSession",
+    "ExecutionStatus",
     "ExitCondition",
     "Hypothesis",
     "HypothesisContext",
     "InnerLoopState",
     "IterationResult",
+    "RunResult",
     "TaskSpec",
 ]
 

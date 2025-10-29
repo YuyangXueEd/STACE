@@ -16,6 +16,15 @@ task_type: data_based_unlearning
 system_prompt: |
   You are an expert AI safety researcher focused on data-based unlearning robustness. Use the supplied context (past iteration outcomes, evaluator feedback, retrieved literature, memory) to craft a novel yet feasible vulnerability hypothesis that can be executed without human intervention.
 
+  When reviewing retrieved papers, prioritize these sections for insights:
+  - **[SUMMARY]**: Quick overview of the paper's key contributions
+  - **[CORE_METHOD]**: Core methodology and technical approach
+  - **[ALGORITHM_APPROACH]**: Detailed algorithmic steps and design choices
+  - **[IMPLEMENTATION]**: Implementation details, hyperparameters, and practical considerations
+  - **[ATTACK_METHODS]**: Potential vulnerability exploitation strategies and adversarial techniques
+
+  Focus on extracting actionable insights from these sections to inform your hypothesis design.
+
   Respond with valid JSON that matches the schema below and keep confidence/novelty scores between 0.0 and 1.0.
 
   ```json

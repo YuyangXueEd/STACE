@@ -76,13 +76,22 @@ class ConfigLoader:
 
             if not seed_templates:
                 # Fallback: load from starter template only
-                logger.warning(
-                    "No task templates defined in %s; falling back to starter_template.yaml",
+                logger.debug(
+                    "No task templates defined in %s; using starter_template.yaml",
                     template_file,
                 )
                 config["seed_templates"] = self._load_starter_task_templates()
             else:
-                config["seed_templates"] = seed_templates
+                # Resolve file references if present
+                resolved_templates = []
+                for template in seed_templates:
+                    if isinstance(template, str) and template.startswith("file:"):
+                        # Format: "file:prompts/starter_template.yaml"
+                        ref_path = template[5:]  # Remove "file:" prefix
+                        resolved_templates.extend(self._load_template_from_file(ref_path))
+                    else:
+                        resolved_templates.append(template)
+                config["seed_templates"] = resolved_templates
 
             # Cache and return
             self._task_templates_cache[task_type] = config
@@ -144,30 +153,49 @@ class ConfigLoader:
 
     def _load_starter_task_templates(self) -> list[dict]:
         """Load task templates from starter_template.yaml."""
-        starter_path = self.config_dir / "prompts" / "starter_template.yaml"
-        if not starter_path.exists():
+        return self._load_template_from_file("prompts/starter_template.yaml")
+
+    def _load_template_from_file(self, relative_path: str) -> list[dict]:
+        """
+        Load task templates from an external file.
+
+        Args:
+            relative_path: Path relative to config_dir (e.g., "prompts/starter_template.yaml")
+
+        Returns:
+            List of template dictionaries
+
+        Raises:
+            ValueError: If file not found or invalid format
+        """
+        template_path = self.config_dir / relative_path
+        if not template_path.exists():
+            raise ValueError(f"Template file not found: {template_path}")
+
+        with open(template_path, "r", encoding="utf-8") as f:
+            payload = yaml.safe_load(f)
+
+        if not isinstance(payload, dict):
+            raise ValueError(f"Template file must contain a YAML dictionary: {template_path}")
+
+        # Handle both single template (seed_template) and list (seed_templates)
+        if "seed_template" in payload:
+            template = payload["seed_template"]
+            if not isinstance(template, dict):
+                raise ValueError(f"'seed_template' key must be a dictionary in {template_path}")
+            template_id = template.get("id", "unknown")
+            logger.info(f"Loaded task template '{template_id}' from {template_path}")
+            return [template]
+        elif "seed_templates" in payload:
+            templates = payload["seed_templates"]
+            if not isinstance(templates, list):
+                raise ValueError(f"'seed_templates' key must be a list in {template_path}")
+            logger.info(f"Loaded {len(templates)} task templates from {template_path}")
+            return templates
+        else:
             raise ValueError(
-                "Starter task template not found; provide at least one template in starter_template.yaml"
+                f"Template file must contain 'seed_template' or 'seed_templates' key: {template_path}"
             )
-
-        with open(starter_path, "r", encoding="utf-8") as starter_file:
-            starter_payload = yaml.safe_load(starter_file)
-
-        if not isinstance(starter_payload, dict):
-            raise ValueError("Starter template must be a dictionary")
-
-        starter_template = starter_payload.get("seed_template")
-        if not isinstance(starter_template, dict):
-            raise ValueError("'seed_template' key missing or invalid in starter template")
-
-        starter_id = starter_template.get("id") or "starter_template"
-        logger.info(
-            "Loaded starter task template '%s' from %s",
-            starter_id,
-            starter_path,
-        )
-
-        return [starter_template]
 
     def get_available_task_types(self) -> list[str]:
         """

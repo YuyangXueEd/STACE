@@ -28,6 +28,10 @@ prompt_guidance:
   hypothesis_config: prompts/hypothesis_generator_concept_erasure.yaml
   critic_config: prompts/critic.yaml
 
+# Seed templates loaded from external file
+seed_templates:
+  - file:prompts/starter_template.yaml
+
 metadata:
   last_updated: "2025-10-24"
   owner: "concept-erasure-research"
