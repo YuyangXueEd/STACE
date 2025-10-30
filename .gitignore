@@ -62,6 +62,7 @@ env/
 
 # Logs
 logs/
+outputs/
 *.log
 
 # Testing
