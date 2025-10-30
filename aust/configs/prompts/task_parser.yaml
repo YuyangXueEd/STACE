@@ -14,6 +14,8 @@ system_prompt: |
   of guessing or hallucinating new information. Do not include commentary or
   any text outside of the JSON object.
 
+  Please keep the path intact when returned, don't add other characters such as `/` in the front.
+
   ONLY RESPOND WITH THE JSON OBJECT.
 
 user_prompt_template: |

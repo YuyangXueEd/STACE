@@ -44,7 +44,7 @@ load_dotenv()
 # Ensure logging matches the rest of the project.
 setup_logging(
     log_level="INFO",
-    log_dir=Path("aust/logs"),
+    log_dir=Path("./logs"),
     enable_console=True,
     enable_file=True,
 )

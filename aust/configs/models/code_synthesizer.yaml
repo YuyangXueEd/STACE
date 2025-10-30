@@ -1,17 +1,18 @@
 # Code Synthesizer Model Configuration
 #
-# Uses locally deployed Ollama instance with qwen3-coder:latest model
-# for code generation and repair tasks.
+# Uses OpenRouter-hosted model for code generation
+# and repair tasks.
 #
 # Model capabilities:
-# - 480B parameters for advanced reasoning and complex code generation
-# - 256k context window - enables keeping full synthesis → execute → repair history
-#   in a single conversation, improving repair quality through context continuity
+# - Production-grade reasoning tuned for code synthesis/repair
+# - Large context window suitable for maintaining synthesis → execute → repair history
+#   in a single conversation, improving repair quality through contextual continuity
 
-model_name: "qwen3-coder:latest"
-model_platform: "ollama"
-base_url: "http://localhost:11434/v1"
-requires_api_key: false
+model_name: "anthropic/claude-sonnet-4.5"
+model_platform: "openrouter"
+base_url: "https://openrouter.ai/api/v1"
+requires_api_key: true
+api_key_env_var: "OPENROUTER_API_KEY"
 
 config:
   # Model parameters
@@ -29,10 +30,8 @@ config:
 
 # Metadata
 metadata:
-  deployment: "local"
-  model_size: "480B parameters"
-  context_window: "256k tokens"
-  description: "Ollama-hosted Qwen3 Coder 480B for concept-erasure attack code synthesis and repair"
+  deployment: "openrouter"
+  description: "OpenRouter-hosted model for concept-erasure attack code synthesis and repair"
   use_case: "Code generation and repair for diffusion model security research"
   architecture_decision: "Single agent handles both synthesis and repair for context continuity"
-  last_updated: "2025-10-28"
+  last_updated: "2025-10-29"

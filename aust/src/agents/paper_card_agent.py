@@ -36,7 +36,7 @@ _PAPER_CARD_MODEL_FALLBACK = {
 
 # Setup logging
 setup_logging(
-    log_level="INFO", log_dir=Path("aust/logs"), enable_console=True, enable_file=True
+    log_level="INFO", log_dir=Path("./logs"), enable_console=True, enable_file=True
 )
 logger = get_logger(__name__)
 

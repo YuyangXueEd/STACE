@@ -220,7 +220,7 @@ class QueryGeneratorAgent:
         self.model_name = model_name or self.DEFAULT_MODEL
         self.max_queries = max(1, max_queries)
         self.top_k = max(1, top_k)
-        self.output_dir = output_dir or Path("aust/outputs/queries")
+        self.output_dir = output_dir or Path("./outputs/queries")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self._prompt_config = self._load_prompt_config()

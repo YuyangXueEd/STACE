@@ -17,6 +17,8 @@ def test_directory_structure_exists() -> None:
         "aust/configs/thresholds",
         "aust/configs/tasks",
         "aust/configs/personas",
+        "outputs",
+        "logs",
         "aust/outputs",
         "aust/experiments",
         "aust/tests/unit",

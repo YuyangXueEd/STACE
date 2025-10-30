@@ -129,7 +129,7 @@ class InnerLoopState(BaseModel):
     completed_at: Optional[datetime] = Field(default=None)
 
     # Output paths
-    output_dir: Path = Field(default=Path("aust/outputs"))
+    output_dir: Path = Field(default=Path("./outputs"))
     attack_trace_file: Optional[Path] = Field(default=None)
 
     # Model inputs (for main.py entry point)
@@ -325,4 +325,3 @@ class InnerLoopState(BaseModel):
 
 
 __all__ = ["ExitCondition", "IterationResult", "InnerLoopState"]
-

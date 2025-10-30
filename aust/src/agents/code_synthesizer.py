@@ -3,7 +3,7 @@ Code Synthesizer Agent for concept-erasure attack code generation and repair.
 
 This agent translates refined hypotheses into executable Python code for
 concept-erasure attacks, using a code-repair-execute loop to automatically
-fix failures up to a configurable retry budget (default 3, max 5).
+fix failures up to a configurable retry budget (default 5, max 5).
 
 The agent uses Ollama's qwen3-coder:latest model (256k context) to maintain full
 synthesis → execute → repair history in a single conversation, improving repair
@@ -48,6 +48,7 @@ MODELS_DIR = AUST_ROOT / "configs" / "models"
 CODE_SYNTHESIZER_PROMPT = "code_synthesizer_concept_erasure.yaml"
 CODE_SYNTHESIZER_MODEL = "code_synthesizer.yaml"
 DIFFUSERS_LIB_PATH = AUST_ROOT.parent / "external" / "diffusers"
+REPO_ROOT = AUST_ROOT.parent
 
 
 def _load_model_settings_strict(name: str) -> dict[str, Any]:
@@ -124,7 +125,7 @@ class CodeSynthesizerAgent:
     1. Takes final hypothesis from Step 2 (hypothesis refinement)
     2. Generates executable Python code for concept-erasure attack
     3. Executes code in sandboxed environment
-    4. Repairs code on failure (retry budget: default 3, max 5)
+    4. Repairs code on failure (retry budget: default 5, max 5)
     5. Reports results to Inner Loop Orchestrator for Step 4 (evaluation)
 
     Features:
@@ -138,7 +139,7 @@ class CodeSynthesizerAgent:
     DEFAULT_MODEL = _CODE_SYNTHESIZER_SETTINGS["model_name"]
     DEFAULT_PLATFORM = _CODE_SYNTHESIZER_SETTINGS["model_platform"]
     DEFAULT_TIMEOUT_SECONDS = 15 * 60  # 15 minutes
-    DEFAULT_MAX_RETRIES = 3
+    DEFAULT_MAX_RETRIES = 5
     MAX_RETRIES_LIMIT = 5
 
     def __init__(
@@ -156,15 +157,15 @@ class CodeSynthesizerAgent:
         Args:
             model_name: Override model for code generation (default: qwen3-coder:latest)
             execution_timeout: Timeout for code execution in seconds (default: 900)
-            max_retries: Maximum repair attempts (default: 3, max: 5)
-            output_dir: Base directory for code and logs (default: aust/outputs)
+            max_retries: Maximum repair attempts (default: 5, max: 5)
+            output_dir: Base directory for code and logs (default: ./outputs)
             require_confirm: Require user confirmation before execution (default: False)
         """
         self.model_name = model_name or self.DEFAULT_MODEL
         self.model_platform = self.DEFAULT_PLATFORM
         self.execution_timeout = execution_timeout
         self.max_retries = min(max_retries, self.MAX_RETRIES_LIMIT)
-        self.output_dir = output_dir or (AUST_ROOT / "outputs")
+        self.output_dir = output_dir or (REPO_ROOT / "outputs")
         self.require_confirm = require_confirm
 
         self._requires_api_key = _CODE_SYNTHESIZER_SETTINGS["requires_api_key"]
@@ -245,7 +246,6 @@ class CodeSynthesizerAgent:
         # Create output directory for this hypothesis
         run_output_dir = (
             self.output_dir
-            / task_id
             / "runs"
             / f"iter_{iteration_number:02d}_{hypothesis.hypothesis_id[:8]}"
         )
@@ -520,10 +520,19 @@ class CodeSynthesizerAgent:
             stderr_text: Optional[str] = None
             exit_code = 0
 
-            stderr_match = re.search(r"\(stderr: (.*?)\)", exec_output, re.DOTALL)
+            stderr_pattern = r"\(stderr:\s*(.*?)(?=\)\s*(?:\(Execution failed with return code \d+\)|$))"
+            stderr_match = re.search(stderr_pattern, exec_output, re.DOTALL)
             if stderr_match:
                 stdout_text = exec_output[: stderr_match.start()].strip()
                 stderr_text = stderr_match.group(1).strip()
+            elif "(stderr:" in exec_output:
+                prefix, _, suffix = exec_output.partition("(stderr:")
+                stdout_text = prefix.strip()
+                end_idx = suffix.rfind(")")
+                if end_idx != -1:
+                    stderr_text = suffix[:end_idx].strip()
+                else:
+                    stderr_text = suffix.strip()
 
             exit_code_match = re.search(
                 r"\(Execution failed with return code (\d+)\)", exec_output
@@ -724,15 +733,8 @@ class CodeSynthesizerAgent:
         """
         # Try to parse as JSON first
         try:
-            # Strip markdown code fences if present
-            json_content = content.strip()
-            if json_content.startswith("```"):
-                # Extract JSON from code fence
-                json_match = re.search(r"```(?:json)?\s*(.*?)```", json_content, flags=re.DOTALL)
-                if json_match:
-                    json_content = json_match.group(1).strip()
+            json_content = CodeSynthesizerAgent._strip_code_fences(content.strip())
 
-            # Parse JSON
             response_data = json.loads(json_content)
 
             # Extract code field
@@ -750,6 +752,11 @@ class CodeSynthesizerAgent:
 
         if match:
             return match.group(1).strip()
+
+        # As a secondary fallback, strip any lingering fences from the content
+        fence_stripped = CodeSynthesizerAgent._strip_code_fences(content)
+        if fence_stripped != content:
+            return fence_stripped.strip()
 
         # Last resort: treat entire content as code
         logger.warning("No code fence found, treating entire response as code")
@@ -769,8 +776,47 @@ class CodeSynthesizerAgent:
         ]:
             value = task_spec.get(key)
             if value:
-                lines.append(f"- {key}: {value}")
+                if isinstance(value, str):
+                    display_value = CodeSynthesizerAgent._normalize_display_value(value)
+                else:
+                    display_value = value
+                lines.append(f"- {key}: {display_value}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _strip_code_fences(text: str) -> str:
+        """Remove leading/trailing markdown code fences if present."""
+        if not text:
+            return text
+
+        pattern = r"^```(?:json|python)?\s*(.*?)\s*```$"
+        match = re.match(pattern, text.strip(), flags=re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        return text
+
+    @staticmethod
+    def _normalize_display_value(value: str) -> str:
+        """Normalize path-like values for display to the language model."""
+        if not value or "://" in value:
+            return value
+
+        try:
+            path = Path(value)
+        except TypeError:
+            return value
+
+        # If the path is absolute and under the repository root, display it relative
+        if path.is_absolute():
+            try:
+                repo_root = REPO_ROOT.resolve()
+                relative = path.resolve().relative_to(repo_root)
+                return relative.as_posix()
+            except Exception:
+                return path.as_posix()
+
+        # For relative paths, ensure POSIX formatting
+        return path.as_posix()
 
     @staticmethod
     def _extract_error_summary(stderr: str) -> str:

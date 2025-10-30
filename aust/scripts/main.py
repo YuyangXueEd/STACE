@@ -7,10 +7,16 @@ This script wires together the TaskParser, TaskSpec assembly, and the
 loop experiment from the CLI.  Typical usage::
 
     python aust/scripts/main.py \
+        --task-type concept_erasure \
         --prompt "Attack Stable Diffusion 1.4 unlearned with concept Cat [with ESD]" \
-        --base-model-path data/unlearned_models/esd/stable-diffusion/Cat/basemodel.safetensors \
-        --unlearned-model-path data/unlearned_models/esd/stable-diffusion/Cat/esd-Cat-from-Cat-esdx.safetensors \
-        --max-iterations 2 --max-debate-rounds 2
+        --unlearned-model-path data/unlearned_models/esd/stable-diffusion/Cat/esd-Cat-from-Cat-esdx-pipeline \
+        --model-name "Stable Diffusion" \
+        --model-version "1.4" \
+        --unlearned-target "Cat" \
+        --unlearning-method "ESD" \
+        --max-iterations 2 \
+        --max-debate-rounds 2 \
+        [--base-model-path data/unlearned_models/esd/stable-diffusion/Cat/base_pipeline]
 
 The script can also resume from a saved `loop_state.json` via `--resume-state`.
 """
@@ -44,10 +50,10 @@ load_dotenv()
 logger = get_logger(__name__)
 
 DEFAULT_TASK_DESCRIPTION = "Evaluate vulnerabilities in machine unlearning"
-DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "aust" / "outputs"
+DEFAULT_OUTPUT_ROOT = PROJECT_ROOT / "outputs"
 DEFAULT_RAG_STORAGE = PROJECT_ROOT / "aust" / "rag_paper_db"
 DEFAULT_CONFIG_DIR = PROJECT_ROOT / "aust" / "configs"
-DEFAULT_LOG_DIR = PROJECT_ROOT / "aust" / "logs"
+DEFAULT_LOG_DIR = PROJECT_ROOT / "logs"
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -80,12 +86,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     spec_group.add_argument(
         "--base-model-path",
         type=Path,
-        help="Path to the base/original model checkpoint.",
+        help="Path to the base/original model (pipeline directory or single-file checkpoint).",
     )
     spec_group.add_argument(
         "--unlearned-model-path",
         type=Path,
-        help="Path to the unlearned/concept-erased model checkpoint.",
+        help="Path to the unlearned/concept-erased model (pipeline directory or single-file checkpoint).",
     )
     spec_group.add_argument(
         "--model-name",
@@ -228,7 +234,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 
     return parser.parse_args(argv)
 
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI entry point."""
     args = parse_args(argv)
@@ -260,7 +265,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         state.highest_vulnerability_confidence,
     )
 
-    
     return 0
 
 
@@ -329,9 +333,11 @@ def _load_task_spec(args: argparse.Namespace) -> TaskSpec:
             "A prompt (via --prompt or --prompt-file) is required when --task-spec-json is not supplied."
         )
 
-    base_model_path = _assert_path(
-        args.base_model_path, "--base-model-path"
-    ).as_posix()
+    base_model_path = None
+    if args.base_model_path is not None:
+        base_model_path = _assert_path(
+            args.base_model_path, "--base-model-path"
+        ).as_posix()
     unlearned_model_path = _assert_path(
         args.unlearned_model_path, "--unlearned-model-path"
     ).as_posix()

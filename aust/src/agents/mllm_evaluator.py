@@ -21,7 +21,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 from collections import OrderedDict
 from aust.src.utils.model_config import load_model_settings
 

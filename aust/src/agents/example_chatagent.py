@@ -11,7 +11,7 @@ from camel.types import ModelPlatformType
 from aust.src.utils.logging_config import setup_logging, get_logger
 
 # Setup logging using CAUST framework
-setup_logging(log_level="INFO", log_dir=Path("aust/logs"), enable_console=True, enable_file=True)
+setup_logging(log_level="INFO", log_dir=Path("./logs"), enable_console=True, enable_file=True)
 logger = get_logger(__name__)
 
 load_dotenv()

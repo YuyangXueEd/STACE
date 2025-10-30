@@ -118,7 +118,7 @@ def setup_logging(
 
     if enable_file:
         if log_dir is None:
-            log_dir = Path("logs")
+            log_dir = Path("./logs")
 
         log_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

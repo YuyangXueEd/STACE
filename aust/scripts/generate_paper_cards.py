@@ -30,7 +30,7 @@ from aust.src.utils.logging_config import setup_logging, get_logger
 
 # Setup logging
 setup_logging(
-    log_level="INFO", log_dir=Path("aust/logs"), enable_console=True, enable_file=True
+    log_level="INFO", log_dir=Path("./logs"), enable_console=True, enable_file=True
 )
 logger = get_logger(__name__)
 

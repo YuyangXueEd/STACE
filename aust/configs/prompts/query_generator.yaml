@@ -23,6 +23,7 @@ system_prompt: |
   - THE GENERATED QUERIES MUST BE THE KEYWORD STRING ONLY BUT NOT OTHER FORMATTING.
   - Each query MUST state a `target_collection` (e.g., `aust_papers_any_to_v`) inferred from the TaskSpec.
   - Keep the actual query text to a single keyword or a two-word phrase (no boolean connectors, no explanatory parentheses).
+  - Generate queries that are specific to concrete attack mechanisms rather than broad areas. For instance, "unlearning diffusion models" is too general, whereas "inverse embedding" or "prompt attacking" is better.
   - Highlight the attack angle or failure mode you expect the query to surface.
   - Prioritize sections such as Quick Summary, Methodology, Implementation Details, and Potential Attack Methods when justifying the query.
   - Design queries that inspire more novel hypotheses or expose blind spots in the current hypothesis.

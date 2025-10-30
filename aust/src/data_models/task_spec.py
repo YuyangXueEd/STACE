@@ -36,7 +36,9 @@ class TaskSpec(BaseModel):
     model_version: Optional[str] = Field(
         default=None, description="Model version if provided (e.g., 1.4)"
     )
-    base_model_path: str = Field(..., description="Path to base/original model")
+    base_model_path: Optional[str] = Field(
+        default=None, description="Path to base/original model (optional)"
+    )
     unlearned_model_path: str = Field(..., description="Path to unlearned/erased model")
     unlearned_target: str = Field(
         ..., description="Primary concept, dataset, or capability that was unlearned"
@@ -75,7 +77,7 @@ class TaskSpec(BaseModel):
         cls,
         *,
         task_type: str,
-        base_model_path: str,
+        base_model_path: Optional[str],
         unlearned_model_path: str,
         user_prompt: str,
         parser_result: Optional["TaskParserResult"],
@@ -86,7 +88,7 @@ class TaskSpec(BaseModel):
 
         Args:
             task_type: Task type (concept_erasure or data_based_unlearning).
-            base_model_path: Path to the base/original model.
+            base_model_path: Optional path to the base/original model.
             unlearned_model_path: Path to the unlearned model.
             user_prompt: Raw prompt provided by the user.
             parser_result: Structured output from TaskParserAgent (may be None).
@@ -170,4 +172,3 @@ class TaskSpec(BaseModel):
 
 
 __all__ = ["TaskSpec"]
-
