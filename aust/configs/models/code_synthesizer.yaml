@@ -17,7 +17,7 @@ api_key_env_var: "OPENROUTER_API_KEY"
 config:
   # Model parameters
   temperature: 0.2  # Low temperature for more deterministic code generation
-  max_tokens: 32000  # Increased for larger model capacity and complex code artifacts
+  max_tokens: 128_000  # Increased for larger model capacity and complex code artifacts
 
   # Ollama-specific settings (if needed)
   # Note: These may vary based on CAMEL's OllamaModel implementation

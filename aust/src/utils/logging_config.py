@@ -147,6 +147,10 @@ class _CamelResultFilter(logging.Filter):
         if record.name != "camel.base_model":
             return True
 
+        msg_text = record.msg if isinstance(record.msg, str) else ""
+        if msg_text.startswith("Messages:") or msg_text.startswith("Messages"):
+            return False
+
         if not isinstance(record.msg, str) or not record.msg.startswith("Result:"):
             return True
 

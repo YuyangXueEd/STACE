@@ -116,6 +116,16 @@ class InnerLoopState(BaseModel):
     enable_debate: bool = Field(
         default=True, description="Enable multi-agent debate for hypothesis refinement"
     )
+    early_stop_on_vulnerability: bool = Field(
+        default=False,
+        description="Stop the loop early when a high-confidence vulnerability is found",
+    )
+    vulnerability_confidence_threshold: float = Field(
+        default=0.9,
+        ge=0.0,
+        le=1.0,
+        description="Confidence threshold for early-stop vulnerability detection",
+    )
 
     # State tracking
     iterations: list[IterationResult] = Field(
@@ -245,8 +255,12 @@ class InnerLoopState(BaseModel):
                 f"Maximum iterations reached ({self.max_iterations})",
             )
 
-        # High-confidence vulnerability found
-        if self.highest_vulnerability_confidence >= 0.9:
+        # High-confidence vulnerability found (optional early stop)
+        if (
+            self.early_stop_on_vulnerability
+            and self.vulnerability_found
+            and self.highest_vulnerability_confidence >= self.vulnerability_confidence_threshold
+        ):
             return (
                 False,
                 f"High-confidence vulnerability found (confidence={self.highest_vulnerability_confidence:.2f})",

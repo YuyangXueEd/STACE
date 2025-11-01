@@ -5,6 +5,7 @@ The package exposes logical groupings so each agent can import only what it need
 while keeping all schemas colocated under `src/data_models`.
 """
 
+from aust.src.data_models.attack_memory import AttackMemoryCard
 from aust.src.data_models.code_synthesis import (
     CodeArtifact,
     CodeArtifactStatus,
@@ -23,6 +24,7 @@ from aust.src.data_models.loop_state import (
 from aust.src.data_models.task_spec import TaskSpec
 
 __all__ = [
+    "AttackMemoryCard",
     "CodeArtifact",
     "CodeArtifactStatus",
     "CodeRepairHistory",

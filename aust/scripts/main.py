@@ -8,15 +8,15 @@ loop experiment from the CLI.  Typical usage::
 
     python aust/scripts/main.py \
         --task-type concept_erasure \
-        --prompt "Attack Stable Diffusion 1.4 unlearned with concept Cat [with ESD]" \
-        --unlearned-model-path data/unlearned_models/esd/stable-diffusion/Cat/esd-Cat-from-Cat-esdx-pipeline \
+        --prompt "Attack Stable Diffusion 1.4 unlearned with concept Micky_Mouse [with ESD]" \
+        --unlearned-model-path data/unlearned_models/esd/stable-diffusion/Micky_Mouse/esd-Micky_Mouse-from-Micky_Mouse-esdx-pipeline \
         --model-name "Stable Diffusion" \
         --model-version "1.4" \
-        --unlearned-target "Cat" \
+        --unlearned-target "Micky_Mouse" \
         --unlearning-method "ESD" \
-        --max-iterations 2 \
-        --max-debate-rounds 2 \
-        [--base-model-path data/unlearned_models/esd/stable-diffusion/Cat/base_pipeline]
+        --max-iterations 3 \
+        --max-debate-rounds 2
+
 
 The script can also resume from a saved `loop_state.json` via `--resume-state`.
 """
@@ -172,6 +172,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=3,
         help="Maximum number of RAG queries per iteration (default: %(default)s).",
     )
+    loop_group.add_argument(
+        "--stop-on-vulnerability",
+        action="store_true",
+        help="Stop the loop early when a high-confidence vulnerability is detected.",
+    )
+    loop_group.add_argument(
+        "--vulnerability-stop-threshold",
+        type=float,
+        default=0.9,
+        help="Confidence threshold for early stopping when enabled (default: %(default)s).",
+    )
 
     path_group = parser.add_argument_group("Paths and I/O")
     path_group.add_argument(
@@ -286,6 +297,8 @@ def run_inner_loop(args: argparse.Namespace):
             max_debate_iterations=args.max_debate_rounds,
             query_generator_model=args.query_generator_model,
             query_max_queries=args.query_max_queries,
+            stop_on_vulnerability=args.stop_on_vulnerability,
+            vulnerability_confidence_threshold=args.vulnerability_stop_threshold,
         )
     else:
         task_spec = _load_task_spec(args)
@@ -310,6 +323,8 @@ def run_inner_loop(args: argparse.Namespace):
             max_debate_iterations=args.max_debate_rounds,
             query_generator_model=args.query_generator_model,
             query_max_queries=args.query_max_queries,
+            stop_on_vulnerability=args.stop_on_vulnerability,
+            vulnerability_confidence_threshold=args.vulnerability_stop_threshold,
         )
 
     final_state = orchestrator.run()

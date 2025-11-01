@@ -767,19 +767,46 @@ class HypothesisRefinementWorkforce:
         return "\n".join(lines) + "\n"
 
     def _render_memory_entries(self, context: HypothesisContext) -> str:
+        """
+        Render past successful attacks from long-term memory.
+
+        Memory entries are structured attack memory cards with sections:
+        [METADATA], [HYPOTHESIS], [RESULTS], [LESSONS_LEARNED]
+        """
         memory = context.memory_entries or []
         if not memory:
             return ""
 
-        lines = ["### Relevant Memory Entries"]
-        for idx, item in enumerate(memory[-3:], start=1):
-            pattern = self._normalize_text(item.get("attack_pattern"))
-            insight = self._normalize_text(
-                item.get("key_insight") or item.get("learning")
-            )
-            lines.append(f"{idx}. Pattern: {pattern or 'unnamed'}")
-            if insight:
-                lines.append(f"   Insight: {insight}")
+        lines = ["### Past Successful Attacks (Learn from these!)"]
+        lines.append("")
+        lines.append("The following attacks successfully discovered vulnerabilities in previous runs.")
+        lines.append("Use these as inspiration but aim for novelty and diversity in your hypothesis.")
+        lines.append("")
+
+        for idx, item in enumerate(memory, start=1):
+            attack_id = item.get("attack_id", "unknown")
+            summary = item.get("summary", "")
+
+            lines.append(f"#### Attack {idx}: {attack_id}")
+            lines.append("")
+
+            # Include the summarized attack memory card content
+            # (Already filtered to relevant sections by LongTermMemoryAgent)
+            if summary:
+                lines.append(summary)
+            else:
+                # Fallback to old format if present
+                pattern = self._normalize_text(item.get("attack_pattern"))
+                insight = self._normalize_text(
+                    item.get("key_insight") or item.get("learning")
+                )
+                if pattern:
+                    lines.append(f"**Pattern**: {pattern}")
+                if insight:
+                    lines.append(f"**Insight**: {insight}")
+
+            lines.append("")
+
         return "\n".join(lines) + "\n"
 
     def _render_starter_template(self, stage: str) -> str:
