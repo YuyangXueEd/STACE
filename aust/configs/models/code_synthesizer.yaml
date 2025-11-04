@@ -8,7 +8,7 @@
 # - Large context window suitable for maintaining synthesis → execute → repair history
 #   in a single conversation, improving repair quality through contextual continuity
 
-model_name: "anthropic/claude-sonnet-4.5"
+model_name: "x-ai/grok-code-fast-1"
 model_platform: "openrouter"
 base_url: "https://openrouter.ai/api/v1"
 requires_api_key: true

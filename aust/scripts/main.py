@@ -8,14 +8,16 @@ loop experiment from the CLI.  Typical usage::
 
     python aust/scripts/main.py \
         --task-type concept_erasure \
-        --prompt "Attack Stable Diffusion 1.4 unlearned with concept Micky_Mouse [with ESD]" \
-        --unlearned-model-path data/unlearned_models/esd/stable-diffusion/Micky_Mouse/esd-Micky_Mouse-from-Micky_Mouse-esdx-pipeline \
+        --prompt "Attack Stable Diffusion 1.4 unlearned with Van Gogh style [with ESD]" \
+        --unlearned-model-path data/unlearned_models/esd/stable-diffusion/Van_Gogh_style/esd-Van_Gogh_style-from-Van_Gogh_style-esdx-pipeline \
         --model-name "Stable Diffusion" \
         --model-version "1.4" \
-        --unlearned-target "Micky_Mouse" \
+        --unlearned-target "Van Gogh style" \
         --unlearning-method "ESD" \
-        --max-iterations 3 \
-        --max-debate-rounds 2
+        --max-iterations 10 \
+        --max-debate-rounds 2 \
+        --outer-iterations 3 \
+        --stop-on-vulnerability
 
 
 The script can also resume from a saved `loop_state.json` via `--resume-state`.
@@ -28,7 +30,8 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Sequence, TYPE_CHECKING
+from typing import Any, Optional, Sequence, TYPE_CHECKING
+from uuid import uuid4
 import agentops
 
 from dotenv import load_dotenv
@@ -42,8 +45,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from aust.src.utils.logging_config import get_logger, setup_logging
 
+from aust.src.agents.judge import JudgeAgent
+from aust.src.agents.reporter import ReporterAgent
+
 if TYPE_CHECKING:  # pragma: no cover - import hints only
     from aust.src.agents.inner_loop_orchestrator import InnerLoopOrchestrator
+    from aust.src.data_models.loop_state import InnerLoopState
+    from aust.src.data_models.report import AcademicReport
     from aust.src.data_models.task_spec import TaskSpec
 
 load_dotenv()
@@ -173,9 +181,23 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Maximum number of RAG queries per iteration (default: %(default)s).",
     )
     loop_group.add_argument(
+        "--outer-iterations",
+        type=int,
+        default=1,
+        help="Number of outer loop cycles (inner loop → report → judge) to execute (default: %(default)s).",
+    )
+    loop_group.add_argument(
         "--stop-on-vulnerability",
+        dest="stop_on_vulnerability",
         action="store_true",
-        help="Stop the loop early when a high-confidence vulnerability is detected.",
+        default=True,
+        help="Stop the loop early when a high-confidence vulnerability is detected (default: enabled).",
+    )
+    loop_group.add_argument(
+        "--no-stop-on-vulnerability",
+        dest="stop_on_vulnerability",
+        action="store_false",
+        help="Disable early stopping when a vulnerability is detected.",
     )
     loop_group.add_argument(
         "--vulnerability-stop-threshold",
@@ -243,6 +265,28 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Keep AgentOps instrumentation enabled (default: disable by unsetting AGENTOPS_API_KEY for this run).",
     )
 
+    judge_group = parser.add_argument_group("Judge evaluation")
+    judge_group.add_argument(
+        "--skip-judge",
+        action="store_true",
+        help="Skip judge workforce evaluation (default: run committee if configuration permits).",
+    )
+    judge_group.add_argument(
+        "--judge-personas",
+        type=Path,
+        help="Optional path to judge persona YAML configuration (defaults to built-in personas).",
+    )
+    judge_group.add_argument(
+        "--judge-model-config",
+        default="judge",
+        help="Model config name to use when initialising JudgeAgent (default: %(default)s).",
+    )
+    judge_group.add_argument(
+        "--judge-output-dir",
+        type=Path,
+        help="Directory where judge evaluations will be written (default: <task_output>/judgments).",
+    )
+
     return parser.parse_args(argv)
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -259,31 +303,44 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     _configure_agentops(args.enable_agentops)
 
     try:
-        state = run_inner_loop(args)
+        states = run_outer_loop(args)
     except Exception as exc:  # pragma: no cover - CLI error path
-        logger.exception("Inner loop execution failed: %s", exc)
+        logger.exception("Outer loop execution failed: %s", exc)
         return 1
 
+    if not states:
+        logger.warning("No inner loop executions were completed.")
+        return 0
+
+    final_state = states[-1]
     logger.info(
-        "Inner loop complete. Final state saved to %s",
-        state.output_dir / "loop_state.json",
+        "Outer loop complete. Latest inner loop state saved to %s",
+        final_state.output_dir / "loop_state.json",
     )
-    logger.info("Attack trace written to %s", state.attack_trace_file)
+    logger.info("Attack trace written to %s", final_state.attack_trace_file)
     logger.info(
-        "Exit condition: %s (vulnerability_found=%s, highest_confidence=%.2f)",
-        state.exit_condition.value if state.exit_condition else "unknown",
-        state.vulnerability_found,
-        state.highest_vulnerability_confidence,
+        "Final exit condition: %s (vulnerability_found=%s, highest_confidence=%.2f)",
+        final_state.exit_condition.value if final_state.exit_condition else "unknown",
+        final_state.vulnerability_found,
+        final_state.highest_vulnerability_confidence,
     )
 
     return 0
 
 
-def run_inner_loop(args: argparse.Namespace):
+def run_inner_loop(
+    args: argparse.Namespace,
+    *,
+    task_spec: Optional["TaskSpec"] = None,
+    task_id_override: Optional[str] = None,
+    output_root_override: Optional[Path] = None,
+):
     """
     Build or resume an InnerLoopOrchestrator and execute it.
     """
     from aust.src.agents.inner_loop_orchestrator import InnerLoopOrchestrator
+
+    output_root = Path(output_root_override) if output_root_override else Path(args.output_root)
 
     if args.resume_state:
         orchestrator = InnerLoopOrchestrator.resume_from_state(
@@ -301,19 +358,20 @@ def run_inner_loop(args: argparse.Namespace):
             vulnerability_confidence_threshold=args.vulnerability_stop_threshold,
         )
     else:
-        task_spec = _load_task_spec(args)
+        spec = task_spec or _load_task_spec(args)
         task_description = (
-            args.task_description or task_spec.user_prompt or DEFAULT_TASK_DESCRIPTION
+            args.task_description or spec.user_prompt or DEFAULT_TASK_DESCRIPTION
         )
+        task_id_value = task_id_override or args.task_id
 
         orchestrator = InnerLoopOrchestrator(
-            task_id=args.task_id,
-            task_type=task_spec.task_type,
+            task_id=task_id_value,
+            task_type=spec.task_type,
             task_description=task_description,
-            task_spec=task_spec,
+            task_spec=spec,
             max_iterations=args.max_iterations,
             enable_debate=not args.disable_debate,
-            output_dir=args.output_root,
+            output_dir=output_root,
             rag_storage_path=args.rag_storage_path,
             config_dir=args.config_dir,
             rag_top_k=args.rag_top_k,
@@ -329,6 +387,280 @@ def run_inner_loop(args: argparse.Namespace):
 
     final_state = orchestrator.run()
     return final_state
+
+
+def run_outer_loop(args: argparse.Namespace) -> list["InnerLoopState"]:
+    """
+    Execute the outer loop workflow (inner loop → report → judge) for one or more iterations.
+    """
+    states: list["InnerLoopState"] = []
+    outer_iterations = max(1, getattr(args, "outer_iterations", 1))
+
+    # Resume mode bypasses outer-loop iteration handling
+    if args.resume_state:
+        state = run_inner_loop(args)
+        states.append(state)
+        _process_inner_loop_outputs(args, state)
+        return states
+
+    # Build TaskSpec once and reuse across outer iterations
+    task_spec = _load_task_spec(args)
+    if hasattr(task_spec, "metadata"):
+        pending_judge_feedback = task_spec.metadata.get("outer_loop", {}).get("judge_feedback")
+    else:
+        pending_judge_feedback = None
+
+
+    if hasattr(task_spec, "metadata"):
+        outer_meta = task_spec.metadata.setdefault("outer_loop", {})
+    elif isinstance(task_spec, dict):
+        metadata = task_spec.setdefault("metadata", {})
+        outer_meta = metadata.setdefault("outer_loop", {})
+    else:
+        outer_meta = None
+
+    pending_judge_feedback = (
+        outer_meta.get("judge_feedback") if outer_meta else None
+    )
+
+    for outer_index in range(outer_iterations):
+        if outer_meta is not None:
+            if pending_judge_feedback:
+                outer_meta["judge_feedback"] = pending_judge_feedback
+            else:
+                outer_meta.pop("judge_feedback", None)
+
+        if outer_index == 0:
+            task_id_override = args.task_id
+        else:
+            base_id = states[0].task_id if states else args.task_id
+            if not base_id:
+                base_id = f"task_{uuid4().hex[:8]}"
+            task_id_override = f"{base_id}_outer{outer_index + 1:02d}"
+
+        logger.info(
+            "===== Outer iteration %d/%d (task_id=%s) =====",
+            outer_index + 1,
+            outer_iterations,
+            task_id_override or "auto",
+        )
+
+        state = run_inner_loop(
+            args,
+            task_spec=task_spec,
+            task_id_override=task_id_override,
+            output_root_override=args.output_root,
+        )
+        states.append(state)
+
+        report, report_path = _process_inner_loop_outputs(args, state)
+
+        summary_text: Optional[str] = None
+        if report_path:
+            summary_path = state.output_dir / "judgments" / f"summary_{state.task_id}.md"
+            if summary_path.exists():
+                summary_text = summary_path.read_text(encoding="utf-8").strip()
+
+        if summary_text:
+            pending_judge_feedback = summary_text
+        else:
+            pending_judge_feedback = None
+
+    return states
+
+
+def generate_report_for_state(state: "InnerLoopState") -> Optional[tuple["AcademicReport", Path]]:
+    """Generate and save a report for the completed inner loop state.
+
+    Returns a tuple of (report, path) on success, or None on failure.
+    """
+    from aust.src.data_models.loop_state import InnerLoopState as _InnerLoopState
+
+    if not isinstance(state, _InnerLoopState):
+        logger.warning("generate_report_for_state called with unexpected state type: %s", type(state))
+        return None
+
+    reporter = ReporterAgent(output_dir=state.output_dir)
+
+    attack_trace_dir = state.output_dir / "attack_traces"
+    attack_trace_json_path = attack_trace_dir / f"trace_{state.task_id}.json"
+
+    attack_trace_md_path = state.attack_trace_file
+    if not attack_trace_md_path:
+        attack_trace_md_path = attack_trace_dir / f"trace_{state.task_id}.md"
+
+    try:
+        report = reporter.generate_report(
+            inner_loop_state=state,
+            attack_trace_json_path=attack_trace_json_path,
+            attack_trace_md_path=attack_trace_md_path,
+            retrieved_papers=None,
+        )
+        report_path = reporter.save_report(report, state.task_id)
+        return report, report_path
+    except Exception as exc:  # pragma: no cover - safeguard around final reporting
+        logger.error("Failed to generate report: %s", exc, exc_info=True)
+        return None
+
+
+def _process_inner_loop_outputs(
+    args: argparse.Namespace,
+    state: "InnerLoopState",
+) -> tuple[Optional["AcademicReport"], Optional[Path]]:
+    """
+    Generate report and optionally run judge evaluation for a completed inner loop state.
+    """
+    report_result = generate_report_for_state(state)
+    if not report_result:
+        logger.info("Report generation skipped or failed; see logs above for details")
+        return None, None
+
+    report, report_path = report_result
+    logger.info("Report generated at %s", report_path)
+
+    if args.skip_judge:
+        logger.info("Judge evaluation skipped via --skip-judge flag")
+    else:
+        _run_judge_committee(args, state, report, report_path)
+
+    return report, report_path
+
+    reporter = ReporterAgent(output_dir=state.output_dir)
+
+    attack_trace_dir = state.output_dir / "attack_traces"
+    attack_trace_json_path = attack_trace_dir / f"trace_{state.task_id}.json"
+
+    attack_trace_md_path = state.attack_trace_file
+    if not attack_trace_md_path:
+        attack_trace_md_path = attack_trace_dir / f"trace_{state.task_id}.md"
+
+    try:
+        report = reporter.generate_report(
+            inner_loop_state=state,
+            attack_trace_json_path=attack_trace_json_path,
+            attack_trace_md_path=attack_trace_md_path,
+            retrieved_papers=None,
+        )
+        report_path = reporter.save_report(report, state.task_id)
+        return report, report_path
+    except Exception as exc:  # pragma: no cover - safeguard around final reporting
+        logger.error("Failed to generate report: %s", exc, exc_info=True)
+        return None
+
+
+def _run_judge_committee(
+    args: argparse.Namespace,
+    state: "InnerLoopState",
+    report: "AcademicReport",
+    report_path: Path | None,
+) -> None:
+    """Run the judge workforce and log aggregate results."""
+    try:
+        from aust.src.data_models.loop_state import InnerLoopState as _InnerLoopState
+    except ImportError:  # pragma: no cover - defensive
+        logger.error("Unable to import InnerLoopState; skipping judge evaluation")
+        return
+
+    if not isinstance(state, _InnerLoopState):
+        logger.warning("run_judge_committee received unexpected state type: %s", type(state))
+        return
+
+    persona_path: Path | None = None
+    if args.judge_personas:
+        try:
+            persona_path = _assert_path(args.judge_personas, "--judge-personas")
+        except (ValueError, FileNotFoundError) as exc:
+            logger.error("Invalid judge persona configuration: %s", exc)
+            return
+
+    judge_output_dir = Path(args.judge_output_dir) if args.judge_output_dir else state.output_dir / "judgments"
+
+    attack_trace_json_path = state.output_dir / "attack_traces" / f"trace_{state.task_id}.json"
+    attack_trace_payload: Path | None = attack_trace_json_path if attack_trace_json_path.exists() else None
+
+    experiment_summary = _build_experiment_summary(state)
+    if report_path:
+        experiment_summary.setdefault("report_path", str(report_path))
+
+    judge_kwargs: dict[str, Any] = {
+        "output_dir": judge_output_dir,
+        "model_config_name": args.judge_model_config,
+    }
+    if persona_path is not None:
+        judge_kwargs["persona_config_path"] = persona_path
+
+    try:
+        judge_agent = JudgeAgent(**judge_kwargs)
+    except EnvironmentError as exc:
+        logger.warning("Judge evaluation skipped: %s", exc)
+        return
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Failed to initialise JudgeAgent: %s", exc, exc_info=True)
+        return
+
+    try:
+        aggregate = judge_agent.run_committee(
+            report=report,
+            attack_trace=attack_trace_payload,
+            experiment_results=experiment_summary,
+            run_id=state.task_id,
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Judge committee execution failed: %s", exc, exc_info=True)
+        return
+
+    summary_path = judge_output_dir / f"summary_{state.task_id}.md"
+    logger.info(
+        "Judge committee completed with %d persona evaluations. Summary written to %s",
+        len(aggregate.persona_evaluations),
+        summary_path,
+    )
+    if aggregate.average_overall_rating is not None:
+        logger.info(
+            "Judge average overall rating: %.2f (0-5 scale)",
+            aggregate.average_overall_rating,
+        )
+    if aggregate.dimension_averages:
+        dimension_line = ", ".join(
+            f"{dimension}: {score:.2f}"
+            for dimension, score in sorted(aggregate.dimension_averages.items())
+        )
+        logger.debug("Judge dimension averages: %s", dimension_line)
+
+
+def _build_experiment_summary(state: "InnerLoopState") -> dict[str, Any]:
+    """Construct a lightweight JSON-serialisable summary of experiment outcomes."""
+    iterations_summary: list[dict[str, Any]] = []
+
+    for iteration in state.iterations:
+        hypothesis = getattr(iteration, "hypothesis", None)
+        iterations_summary.append(
+            {
+                "iteration_number": iteration.iteration_number,
+                "attack_type": getattr(hypothesis, "attack_type", None),
+                "hypothesis_description": getattr(hypothesis, "description", None),
+                "experiment_executed": iteration.experiment_executed,
+                "vulnerability_detected": iteration.vulnerability_detected,
+                "vulnerability_confidence": iteration.vulnerability_confidence,
+                "key_learning": iteration.key_learning,
+                "started_at": iteration.started_at.isoformat() if iteration.started_at else None,
+                "completed_at": iteration.completed_at.isoformat() if iteration.completed_at else None,
+            }
+        )
+
+    return {
+        "task_id": state.task_id,
+        "task_type": state.task_type,
+        "task_description": state.task_description,
+        "vulnerability_found": state.vulnerability_found,
+        "highest_confidence": state.highest_vulnerability_confidence,
+        "exit_condition": state.exit_condition.value if state.exit_condition else None,
+        "total_iterations": len(state.iterations),
+        "started_at": state.started_at.isoformat() if state.started_at else None,
+        "completed_at": state.completed_at.isoformat() if state.completed_at else None,
+        "duration_seconds": state.total_duration_seconds,
+        "iterations": iterations_summary,
+    }
 
 
 def _load_task_spec(args: argparse.Namespace) -> TaskSpec:

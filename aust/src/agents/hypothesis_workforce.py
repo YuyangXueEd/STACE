@@ -624,6 +624,7 @@ class HypothesisRefinementWorkforce:
             "iteration_number": context.iteration_number,
             "past_results_section": self._render_past_results_section(context),
             "evaluator_feedback_section": self._render_evaluator_feedback(context),
+            "judge_feedback_section": self._render_judge_feedback(context),
             "retrieved_papers_section": self._render_retrieved_papers(context),
             "memory_entries_section": self._render_memory_entries(context),
             "starter_template_section": (
@@ -670,8 +671,9 @@ class HypothesisRefinementWorkforce:
             return textwrap.dedent(
                 f"""
                 Propose a fresh vulnerability hypothesis for this iteration by synthesizing
-                evaluator feedback, past results, memory entries, and retrieved papers.
-                Focus on unexplored attack angles that align with the TaskSpec.
+                judge summary notes, evaluator feedback, past results, memory entries, and
+                retrieved papers. Focus on unexplored attack angles that align with the TaskSpec
+                while incorporating the judges' critiques to raise report quality.
 
                 {task_spec_summary}
 
@@ -725,6 +727,18 @@ class HypothesisRefinementWorkforce:
         return textwrap.dedent(
             f"""### Evaluator Feedback
                 {feedback}
+                """
+        )
+
+    def _render_judge_feedback(self, context: HypothesisContext) -> str:
+        summary = self._normalize_text(context.outer_loop_feedback)
+        if summary and len(summary) > 1200:
+            summary = summary[:1200] + '...'
+        if not summary:
+            return ""
+        return textwrap.dedent(
+            f"""### Judge Summary Feedback
+                {summary}
                 """
         )
 

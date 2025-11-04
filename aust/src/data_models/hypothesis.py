@@ -107,7 +107,10 @@ class HypothesisContext(BaseModel):
         default=None,
         description="Recent critic feedback summaries to guide new hypotheses (inner loop from critic)",
     )
+    outer_loop_feedback: Optional[str] = Field(
+        default=None,
+        description="Summary of judge evaluations from the previous outer loop iteration",
+    )
 
 
 __all__ = ["Hypothesis", "HypothesisContext"]
-

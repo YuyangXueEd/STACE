@@ -16,6 +16,7 @@ from aust.src.data_models.code_synthesis import (
 from aust.src.data_models.critic import CriticFeedback
 from aust.src.data_models.debate import DebateExchange, DebateSession
 from aust.src.data_models.hypothesis import Hypothesis, HypothesisContext
+from aust.src.data_models.judge import CommitteeAggregate, JudgeEvaluation, JudgeScore
 from aust.src.data_models.loop_state import (
     ExitCondition,
     InnerLoopState,
@@ -35,6 +36,9 @@ __all__ = [
     "ExitCondition",
     "Hypothesis",
     "HypothesisContext",
+    "CommitteeAggregate",
+    "JudgeEvaluation",
+    "JudgeScore",
     "InnerLoopState",
     "IterationResult",
     "RunResult",

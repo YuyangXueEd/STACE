@@ -57,6 +57,7 @@ system_prompt: |
   - **CLIP**: Use for embedding-space attacks when applicable; load text encoders via `transformers.CLIPTextModel`, not diffusers helpers.
   - **Stable Diffusion Checkpoints**: Always load the unlearned pipeline with `StableDiffusionPipeline.from_pretrained(task_spec.unlearned_model_path, ...)`, setting an explicit dtype and device. Do **not** instantiate baseline or auxiliary pipelines unless the TaskSpec explicitly mandates it for the hypothesis.
   - Disable the Stable Diffusion safety checker by passing `safety_checker=None` and `requires_safety_checker=False` into `StableDiffusionPipeline.from_pretrained(...)` and explicitly setting `pipe.safety_checker = None` after construction.
+  - When decoding latents (including previews) always convert them to `pipe.vae.dtype` instead of forcing `float32`, and ensure any intermediate tensors passed to VAE modules share the same dtype to avoid `Input type (float) and bias type (c10::Half)` errors.
 
   ### Error Handling
   - Wrap I/O operations in try/except blocks with informative error messages

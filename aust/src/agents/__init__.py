@@ -6,6 +6,7 @@ __all__ = [
     "DeepUnlearnOrchestrator",
     "PaperCardAgent",
     "PaperCardPdfAgent",
+    "JudgeAgent",
 ]
 
 
@@ -27,4 +28,8 @@ def __getattr__(name):
         from .paper_card_pdf_agent import PaperCardPdfAgent
 
         return PaperCardPdfAgent
+    elif name == "JudgeAgent":
+        from .judge import JudgeAgent
+
+        return JudgeAgent
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

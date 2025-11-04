@@ -1,0 +1,166 @@
+# Reporter Agent Prompts (Story 4.2 - Content Generation)
+#
+# These prompts will be used in Story 4.2 for detailed content generation.
+# Story 4.1 generates outlines only.
+
+# System prompt for reporter agent
+system_prompt: |
+  You are an expert academic writer specializing in machine learning security research.
+  Your task is to generate high-quality academic paper sections based on experimental results
+  from automated vulnerability assessments of machine unlearning systems.
+
+  Guidelines:
+  - Write in formal academic style (third person, passive voice where appropriate)
+  - Be precise and evidence-based
+  - Cite relevant literature when provided
+  - Use technical terminology correctly
+  - Structure arguments logically
+  - Maintain objectivity in discussing results
+
+# Section-specific prompts (for Story 4.2)
+sections:
+  introduction:
+    prompt_template: |
+      Generate an Introduction section for an academic paper on vulnerability assessment of machine unlearning.
+
+      Context:
+      - Target model: {target_model}
+      - Unlearning method: {unlearning_method}
+      - Task type: {task_type}
+      - Results summary: {results_summary}
+
+      The introduction should cover:
+      1. Problem statement (why machine unlearning security matters)
+      2. Background on machine unlearning and {unlearning_method}
+      3. Motivation for automated vulnerability discovery
+      4. Objectives of this specific assessment
+      5. Scope and structure of the paper
+
+      Target length: ~650 words
+
+      Retrieved papers for context:
+      {retrieved_papers}
+
+  methods:
+    prompt_template: |
+      Generate a Methods section describing the AUST automated vulnerability discovery system.
+
+      System configuration:
+      {system_configuration}
+
+      The methods section should describe:
+      1. System architecture overview
+      2. Hypothesis generation process (RAG + multi-agent debate)
+      3. Experiment execution workflow
+      4. Evaluation methodology
+      5. Iteration structure and stopping criteria
+
+      Include specific details about:
+      - Models used: Generator ({generator_model}), Critic ({critic_model})
+      - Max iterations: {max_iterations}
+      - Debate configuration
+      - Quality thresholds
+
+      Target length: ~1250 words
+
+      Retrieved papers describing similar methodologies:
+      {retrieved_papers}
+
+  experiments:
+    prompt_template: |
+      Generate an Experiments section detailing the experimental setup.
+
+      Target system under test:
+      - Model: {target_model} v{model_version}
+      - Unlearning method: {unlearning_method}
+      - Unlearned target: {unlearned_target}
+
+      Experimental parameters:
+      {experimental_parameters}
+
+      The experiments section should cover:
+      1. Target model description and architecture
+      2. Unlearning method details and hyperparameters
+      3. Experimental setup and configuration
+      4. Computational resources and constraints
+      5. Datasets used (if applicable)
+
+      Target length: ~800 words
+
+      Retrieved papers on {unlearning_method}:
+      {retrieved_papers}
+
+  results:
+    prompt_template: |
+      Generate a Results section presenting the findings from {total_iterations} iterations.
+
+      Attack trace summary:
+      {attack_trace_summary}
+
+      Key findings:
+      - Vulnerability found: {vulnerability_found}
+      - Highest confidence: {highest_confidence}
+      - Successful attacks: {successful_attack_count}
+
+      The results section should include:
+      1. Summary of iterations and outcomes
+      2. Description of successful vulnerability discoveries (with evidence)
+      3. Hypothesis evolution analysis
+      4. Quantitative metrics and confidence scores
+      5. Qualitative observations from experiments
+      6. Attack trace highlights
+
+      Use tables for quantitative results where appropriate.
+
+      Target length: ~1250 words
+
+      Attack trace iterations:
+      {iteration_details}
+
+  discussion:
+    prompt_template: |
+      Generate a Discussion section interpreting the results.
+
+      Results to interpret:
+      - Vulnerability found: {vulnerability_found}
+      - Attack approaches: {attack_types}
+      - Success rate: {success_rate}
+
+      The discussion should address:
+      1. Interpretation of findings (what do results mean?)
+      2. Why certain attacks succeeded or failed
+      3. Comparison to known vulnerabilities in literature
+      4. Implications for {unlearning_method} robustness
+      5. Deployment recommendations
+      6. Limitations of the assessment
+      7. Future work directions
+
+      Retrieved papers for comparison:
+      {retrieved_papers}
+
+      Target length: ~1000 words
+
+  conclusion:
+    prompt_template: |
+      Generate a Conclusion section summarizing the work.
+
+      Key points to summarize:
+      - Main contribution: Automated assessment of {target_model} with {unlearning_method}
+      - Primary finding: {vulnerability_found}
+      - Iterations: {total_iterations}
+      - System: AUST autonomous testing
+
+      The conclusion should include:
+      1. Summary of contribution
+      2. Main conclusions from results
+      3. Practical implications
+      4. Brief limitations recap
+      5. Closing statement on broader impact
+
+      Target length: ~500 words
+
+# Outline generation prompts (Story 4.1 - current implementation)
+outline_generation:
+  enabled: true
+  include_placeholder_text: true
+  mark_story_42_sections: true

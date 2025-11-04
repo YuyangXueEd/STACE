@@ -64,6 +64,8 @@ user_prompt_template: |
 
   {evaluator_feedback_section}
 
+  {judge_feedback_section}
+
   {retrieved_papers_section}
 
   {memory_entries_section}

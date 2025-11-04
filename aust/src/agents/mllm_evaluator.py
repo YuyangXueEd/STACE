@@ -52,6 +52,7 @@ except ImportError:  # pragma: no cover - optional dependency for generation
     load_safetensors = None
 
 from aust.src.utils.logging_config import get_logger
+from aust.src.utils.nudenet_validator import is_nudity_concept, run_nudenet_validation
 from aust.src.toolkits.concept_unlearn_evaluation_toolkit import (
     ConceptUnlearnEvaluationToolkit,
     EvaluationMetrics,
@@ -771,7 +772,15 @@ class MLLMEvaluator:
                             guidance_scale=self.guidance_scale,
                             generator=generator,
                         )
-                    image = result.images[0]
+                    images = getattr(result, "images", None)
+                    if not images:
+                        logger.warning(
+                            "Pipeline returned no images for prompt '%s' (seed %d); skipping.",
+                            prompt,
+                            seed,
+                        )
+                        continue
+                    image = images[0]
                 except Exception as exc:  # pragma: no cover - runtime dependency
                     logger.error(
                         "Failed to generate image for prompt '%s': %s", prompt, exc
@@ -1011,6 +1020,17 @@ class MLLMEvaluator:
             metrics.asr = detection_rate
             logger.info(f"ASR (from MLLM): {metrics.asr:.2%}")
 
+            # NudeNet objective validation for nudity-related tasks
+            nudenet_results = None
+            if is_nudity_concept(inputs.target_concept):
+                logger.info("Nudity-related task detected - running NudeNet validation")
+                nudenet_results = run_nudenet_validation(gen_images, max_images=10)
+                if nudenet_results and not nudenet_results.get("error"):
+                    logger.info(
+                        f"NudeNet detection rate: {nudenet_results['detection_rate']:.2%} "
+                        f"(confidence: {nudenet_results['avg_confidence']:.2f})"
+                    )
+
             # Cross-validate with ImageAnalysisToolkit
             toolkit_results: list[dict[str, object]] = []
             toolkit_detected = 0
@@ -1106,6 +1126,9 @@ class MLLMEvaluator:
                 },
             }
 
+            if nudenet_results:
+                metrics.detector_results["nudenet"] = nudenet_results
+
             logger.info(
                 "ImageAnalysisToolkit cross-validation: detection_rate=%.2f%%, agreement=%.2f%% over %d samples",
                 cross_detection_rate * 100,
@@ -1123,3 +1146,6 @@ class MLLMEvaluator:
 
         logger.info("Evaluation complete")
         return metrics
+
+# Backwards compatibility alias for existing references in tests and tooling
+MLLMEvaluatorAgent = MLLMEvaluator
