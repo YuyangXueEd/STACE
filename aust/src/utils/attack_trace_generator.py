@@ -143,6 +143,129 @@ class AttackTraceGenerator:
 
         logger.debug(f"Iteration {iteration_number} appended to attack trace")
 
+    def save_iteration_trace(
+        self,
+        iteration_result: IterationResult,
+        iteration_number: int,
+        task_type: str,
+        task_description: Optional[str] = None,
+        task_spec: Optional[dict[str, Any]] = None,
+    ) -> Path:
+        """
+        Save per-iteration attack trace to individual JSON file (Story 5.2 AC7).
+
+        This method generates standalone traces for each iteration, enabling
+        the Reporter to incrementally load and analyze iteration results
+        without waiting for the full task to complete.
+
+        Args:
+            iteration_result: Complete iteration result
+            iteration_number: Current iteration number (1-indexed)
+            task_type: Task type (concept_erasure, data_based_unlearning)
+            task_description: Optional task description for context
+            task_spec: Optional task specification dictionary for context
+
+        Returns:
+            Path to the saved iteration trace file
+
+        Example filename:
+            attack_trace_iter_01.json, attack_trace_iter_02.json, etc.
+        """
+        # Build per-iteration trace file path
+        filename = f"attack_trace_iter_{iteration_number:02d}.json"
+        iteration_trace_file = self.traces_dir / filename
+
+        # Build iteration trace structure matching AC7 schema
+        # Include task-level context for standalone trace files
+        iteration_trace = {
+            "task_id": self.task_id,
+            "task_type": task_type,
+            "task_description": task_description,
+            "task_spec": task_spec or {},
+            "iteration": {
+                "iteration_number": iteration_number,
+                "started_at": iteration_result.started_at.isoformat(),
+                "completed_at": (
+                    iteration_result.completed_at.isoformat()
+                    if iteration_result.completed_at
+                    else None
+                ),
+                "hypothesis": self._serialize_hypothesis(iteration_result.hypothesis),
+                "attempts": self._extract_attempts_from_iteration(iteration_result),
+                "final_status": "success" if iteration_result.vulnerability_detected else "failure",
+                "vulnerability_detected": iteration_result.vulnerability_detected,
+                "confidence": iteration_result.vulnerability_confidence,
+                "debate_session": (
+                    self._serialize_debate_session(iteration_result.debate_session)
+                    if iteration_result.debate_session
+                    else None
+                ),
+                "debate_narrative": (
+                    self._generate_debate_narrative(iteration_result.debate_session).strip()
+                    if iteration_result.debate_session
+                    else None
+                ),
+                "key_learning": iteration_result.key_learning,
+                "outcome_summary": iteration_result.outcome,
+            },
+        }
+
+        # Write to file with atomic write pattern
+        temp_file = iteration_trace_file.with_suffix(".tmp")
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(iteration_trace, f, indent=2, ensure_ascii=False)
+        temp_file.replace(iteration_trace_file)
+
+        logger.info(f"Saved iteration {iteration_number} trace: {iteration_trace_file}")
+        return iteration_trace_file
+
+    def _extract_attempts_from_iteration(
+        self, iteration_result: IterationResult
+    ) -> list[dict[str, Any]]:
+        """
+        Extract attempt records from an iteration result.
+
+        For now, each iteration maps to a single attempt. In future stories,
+        code repair loops may generate multiple attempts per iteration.
+
+        Args:
+            iteration_result: Iteration result to extract attempts from
+
+        Returns:
+            List of attempt records
+        """
+        attempt = {
+            "attempt_number": 1,
+            "status": "success" if iteration_result.vulnerability_detected else "failure",
+            "images_generated": self._count_images_from_results(iteration_result),
+            "evaluator_feedback": iteration_result.evaluator_feedback or "No feedback",
+        }
+        return [attempt]
+
+    def _count_images_from_results(self, iteration_result: IterationResult) -> int:
+        """
+        Count number of images generated from experiment results.
+
+        Args:
+            iteration_result: Iteration result with experiment_results
+
+        Returns:
+            Number of images generated (0 if not available)
+        """
+        if not iteration_result.experiment_results:
+            return 0
+
+        results = iteration_result.experiment_results
+        # Check for image_paths or images_count field
+        if "image_paths" in results:
+            return len(results["image_paths"])
+        if "images_count" in results:
+            return results["images_count"]
+        if "images_generated" in results:
+            return results["images_generated"]
+
+        return 0
+
     def finalize_trace(
         self,
         final_state: InnerLoopState,

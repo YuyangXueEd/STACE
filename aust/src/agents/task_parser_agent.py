@@ -44,6 +44,51 @@ _TASK_PARSER_SETTINGS = load_model_settings(
 
 _PROMPTS_DIR = Path(__file__).resolve().parents[2] / "configs" / "prompts"
 _TASK_PARSER_PROMPT_FILE = _PROMPTS_DIR / "task_parser.yaml"
+_HYPOTHESIS_TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "configs" / "hypothesis"
+
+
+_STYLE_KEYWORDS = {
+    "style",
+    "painting",
+    "illustration",
+    "van gogh",
+    "anime",
+    "renaissance",
+    "pixel art",
+    "watercolor",
+    "impressionism",
+    "oil painting",
+    "sketch",
+    "photography style",
+    "comic",
+}
+
+_ABSTRACT_KEYWORDS = {
+    "emotion",
+    "concept",
+    "behavior",
+    "abstract",
+    "nudity",
+    "violence",
+    "politics",
+    "religion",
+    "censorship",
+    "safety",
+    "ethics",
+    "morality",
+}
+
+_OBJECT_HINTS = {
+    "object",
+    "entity",
+    "character",
+    "person",
+    "animal",
+    "plant",
+    "food",
+    "vehicle",
+    "place",
+}
 
 
 @dataclass
@@ -58,7 +103,7 @@ class TaskParserResult:
     def normalized_dict(self) -> dict[str, Optional[str]]:
         """Return lowercase-key dict with trimmed string values."""
         data: dict[str, Optional[str]] = {}
-        for field_name in ("model_name", "model_version", "unlearned_target", "unlearning_method"):
+        for field_name in ("model_name", "model_version", "unlearned_target", "unlearning_method", "target_type"):
             value = self.fields.get(field_name) if self.fields else None
             if value is None:
                 data[field_name] = None
@@ -169,6 +214,11 @@ class TaskParserAgent:
             response = self._agent.step(user_message)
             message = self._select_last_message(response)
             structured = self._extract_structured_payload(message)
+            if not structured.get("target_type"):
+                target = structured.get("unlearned_target")
+                inferred_type = self.classify_target_type(target)
+                if inferred_type:
+                    structured["target_type"] = inferred_type
             return TaskParserResult(fields=structured, raw_response=message.content)
         finally:
             self._agent.reset()
@@ -199,7 +249,7 @@ class TaskParserAgent:
 
     @staticmethod
     def _normalize_fields(payload: dict[str, Any]) -> dict[str, Optional[str]]:
-        allowed_keys = {"model_name", "model_version", "unlearned_target", "unlearning_method"}
+        allowed_keys = {"model_name", "model_version", "unlearned_target", "unlearning_method", "target_type"}
         # Backward compatibility: accept 'unlearned_concept' and map to 'unlearned_target'
         if "unlearned_target" not in payload and "unlearned_concept" in payload:
             payload = dict(payload)
@@ -228,6 +278,153 @@ class TaskParserAgent:
             if text.endswith("```"):
                 text = text[:-3]
         return json.loads(text.strip())
+
+    @staticmethod
+    def classify_target_type(unlearned_target: Optional[str]) -> Optional[str]:
+        """
+        Heuristically classify an unlearned target when the LLM leaves target_type empty.
+
+        Args:
+            unlearned_target: Target text extracted from the prompt
+
+        Returns:
+            One of "object", "abstract", "style", or None if classification fails.
+        """
+        if not unlearned_target:
+            return None
+
+        value = str(unlearned_target).strip().lower()
+        if not value:
+            return None
+
+        tokenized = {token.strip() for token in value.replace("-", " ").split()}
+
+        # Check explicit keywords for style concepts
+        if any(keyword in value for keyword in _STYLE_KEYWORDS):
+            return "style"
+        if any(token in _STYLE_KEYWORDS for token in tokenized):
+            return "style"
+
+        # Check abstract concept cues
+        if any(keyword in value for keyword in _ABSTRACT_KEYWORDS):
+            return "abstract"
+        if any(token in _ABSTRACT_KEYWORDS for token in tokenized):
+            return "abstract"
+
+        # Fallback object hints
+        if any(token in _OBJECT_HINTS for token in tokenized):
+            return "object"
+
+        # If the target is a single capitalized word (e.g., proper noun), treat as style
+        if unlearned_target.strip().istitle() and " " in unlearned_target.strip():
+            return "style"
+
+        # Default to object for concrete single-word nouns
+        if len(tokenized) == 1:
+            return "object"
+
+        return None
+
+    @staticmethod
+    def load_hypothesis_templates(target_type: Optional[str]) -> list[dict[str, Any]]:
+        """
+        Load hypothesis seed templates for a given target type.
+
+        Args:
+            target_type: Classification of target ('object', 'abstract', 'style', or None)
+
+        Returns:
+            List of template dictionaries with metadata and hypothesis content.
+            Returns empty list if no templates found or target_type is None.
+        """
+        if not target_type:
+            logger.info("No target_type provided, falling back to starter_template.yaml")
+            starter_path = _HYPOTHESIS_TEMPLATES_DIR / "starter_template.yaml"
+            if starter_path.exists():
+                try:
+                    with starter_path.open("r", encoding="utf-8") as f:
+                        template_data = yaml.safe_load(f)
+                    seed = TaskParserAgent._extract_seed_template(template_data, starter_path)
+                    return [seed] if seed else []
+                except Exception as exc:
+                    logger.error(f"Failed to load starter template: {exc}")
+                    return []
+            return []
+
+        target_dir = _HYPOTHESIS_TEMPLATES_DIR / target_type
+        if not target_dir.exists() or not target_dir.is_dir():
+            logger.warning(
+                f"No hypothesis template directory found for target_type='{target_type}', "
+                f"falling back to starter_template.yaml"
+            )
+            starter_path = _HYPOTHESIS_TEMPLATES_DIR / "starter_template.yaml"
+            if starter_path.exists():
+                try:
+                    with starter_path.open("r", encoding="utf-8") as f:
+                        template_data = yaml.safe_load(f)
+                    seed = TaskParserAgent._extract_seed_template(template_data, starter_path)
+                    return [seed] if seed else []
+                except Exception as exc:
+                    logger.error(f"Failed to load starter template: {exc}")
+                    return []
+            return []
+
+        templates = []
+        yaml_files = sorted(target_dir.glob("*.yaml")) + sorted(target_dir.glob("*.yml"))
+
+        if not yaml_files:
+            logger.warning(
+                f"No YAML templates found in {target_dir}, falling back to starter_template.yaml"
+            )
+            starter_path = _HYPOTHESIS_TEMPLATES_DIR / "starter_template.yaml"
+            if starter_path.exists():
+                try:
+                    with starter_path.open("r", encoding="utf-8") as f:
+                        template_data = yaml.safe_load(f)
+                    seed = TaskParserAgent._extract_seed_template(template_data, starter_path)
+                    return [seed] if seed else []
+                except Exception as exc:
+                    logger.error(f"Failed to load starter template: {exc}")
+                    return []
+            return []
+
+        for yaml_file in yaml_files:
+            try:
+                with yaml_file.open("r", encoding="utf-8") as f:
+                    template_data = yaml.safe_load(f)
+                seed_template = TaskParserAgent._extract_seed_template(template_data, yaml_file)
+                if seed_template:
+                    seed_template.setdefault("_source_path", str(yaml_file))
+                    templates.append(seed_template)
+                    logger.debug(f"Loaded template from {yaml_file.name}")
+            except Exception as exc:
+                logger.warning(f"Failed to load template {yaml_file.name}: {exc}")
+                continue
+
+        logger.info(f"Loaded {len(templates)} template(s) for target_type='{target_type}'")
+        return templates
+
+    @staticmethod
+    def _extract_seed_template(raw_data: Any, source_path: Path) -> Optional[dict[str, Any]]:
+        """
+        Normalize raw YAML template data into a single seed_template dict.
+        """
+        if not raw_data:
+            return None
+
+        if isinstance(raw_data, dict) and "seed_template" in raw_data:
+            seed = raw_data.get("seed_template")
+        else:
+            seed = raw_data
+
+        if not isinstance(seed, dict):
+            logger.warning("Template at %s does not contain a valid seed_template section", source_path)
+            return None
+
+        normalized = dict(seed)
+        normalized.setdefault("id", source_path.stem)
+        normalized.setdefault("source_path", str(source_path))
+        return normalized
 
 
 __all__ = ["TaskParserAgent", "TaskParserResult"]

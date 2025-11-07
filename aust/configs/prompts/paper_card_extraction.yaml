@@ -32,7 +32,6 @@ system_prompt: |
   4. **Potential Attack Methods**: How does this paper's methodology apply to vulnerability discovery in machine unlearning systems? Could these techniques be adapted to attack data-based unlearning or concept erasure methods?
 
 # User prompt template with variables: {title}, {authors}, {venue}, {year}, {arxiv_id}, {model_type}, {attack_level}, {pdf_text}
-# Feng: What is attack level?
 # user_prompt_template: |
 #   Extract structured information from the following research paper and generate a paper card.
 

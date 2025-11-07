@@ -46,6 +46,10 @@ class TaskSpec(BaseModel):
     unlearning_method: Optional[str] = Field(
         default=None, description="Method used for unlearning (optional)"
     )
+    target_type: Optional[str] = Field(
+        default=None,
+        description="Classification of unlearned target: 'object', 'abstract', or 'style'"
+    )
     user_prompt: str = Field(..., description="Raw user prompt provided at the CLI")
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -136,6 +140,7 @@ class TaskSpec(BaseModel):
         model_version = select("model_version", required=False)
         unlearned_target = select("unlearned_target", required=True)
         unlearning_method = select("unlearning_method", required=False)
+        target_type = select("target_type", required=False)
 
         metadata: dict[str, Any] = {"field_sources": field_sources}
 
@@ -152,6 +157,7 @@ class TaskSpec(BaseModel):
                 "model_version",
                 "unlearned_target",
                 "unlearning_method",
+                "target_type",
             )
         }
 
@@ -164,6 +170,7 @@ class TaskSpec(BaseModel):
                 unlearned_model_path=unlearned_model_path,
                 unlearned_target=unlearned_target,  # type: ignore[arg-type]
                 unlearning_method=unlearning_method,
+                target_type=target_type,
                 user_prompt=prompt_text,
                 metadata=metadata,
             )

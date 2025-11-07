@@ -2,7 +2,7 @@
 #
 # Defines task-level settings that apply to concept-erasure workflows across
 # all inner-loop runs. Seed templates are managed separately via
-# `configs/prompts/starter_template.yaml` so that we can update or swap them
+# `configs/prompts/hypothesis/starter_template.yaml` so that we can update or swap them
 # without modifying this task descriptor.
 
 task_type: concept_erasure
@@ -30,12 +30,12 @@ prompt_guidance:
 
 # Seed templates loaded from external file
 seed_templates:
-  - file:prompts/starter_template.yaml
+  - file:hypothesis/starter_template.yaml
 
 metadata:
   last_updated: "2025-10-24"
   owner: "concept-erasure-research"
   notes: >
     Seed hypothesis templates are injected at runtime from
-    `configs/prompts/starter_template.yaml`. Additional task-specific
+    `configs/hypothesis/starter_template.yaml`. Additional task-specific
     prompts or templates can be layered without touching this file.

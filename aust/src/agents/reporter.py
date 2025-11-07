@@ -3,21 +3,49 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
-from datetime import datetime, timezone
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from statistics import mean
 from typing import Any, Optional
 
 import yaml
 
+
+class LiteralString(str):
+    """Signal to YAML dumper to emit literal block style (|)."""
+
+
+class FoldedString(str):
+    """Signal to YAML dumper to emit folded block style (>)."""
+
+
+class TemplateSafeDumper(yaml.SafeDumper):
+    """Custom dumper that supports LiteralString and FoldedString helpers."""
+
+
+def _literal_str_representer(dumper: yaml.Dumper, data: LiteralString):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+
+
+def _folded_str_representer(dumper: yaml.Dumper, data: FoldedString):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=">")
+
+
+TemplateSafeDumper.add_representer(LiteralString, _literal_str_representer)
+TemplateSafeDumper.add_representer(FoldedString, _folded_str_representer)
+
 from aust.src.data_models.loop_state import InnerLoopState
 from aust.src.data_models.report import (
     AcademicReport,
+    NoveltyInfo,
     ReportMetadata,
     ReportSection,
     ReportSectionType,
 )
+from aust.src.rag.vector_db import PaperRAG
 from aust.src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -42,18 +70,18 @@ class ReporterAgent:
 
     def __init__(
         self,
-        template_path: Optional[Path] = None,
         output_dir: Optional[Path] = None,
+        rag_storage_path: Optional[Path] = None,
     ):
         """
         Initialize Reporter Agent.
 
         Args:
-            template_path: Path to report template (default: auto-detect)
             output_dir: Base output directory for reports (default: ./outputs)
+            rag_storage_path: Path to RAG vector store for novelty calculation
         """
-        self.template_path = template_path or self._get_default_template_path()
         self.output_dir = output_dir or Path("./outputs")
+        self.rag_storage_path = rag_storage_path or (self._get_project_root() / "aust" / "rag_paper_db")
         self._config = self._load_report_config()
         report_cfg = self._config.get("report", {}) if isinstance(self._config, dict) else {}
         self._target_word_counts = (
@@ -62,7 +90,7 @@ class ReporterAgent:
             else {}
         )
 
-        logger.info("ReporterAgent initialized (template: %s)", self.template_path)
+        logger.info("ReporterAgent initialized (output_dir: %s)", self.output_dir)
 
     def generate_report(
         self,
@@ -251,6 +279,16 @@ class ReporterAgent:
         """Create report metadata from inner loop state."""
         task_spec = inner_loop_state.task_spec or {}
 
+        # Calculate novelty if we have a final successful hypothesis
+        novelty_info = None
+        if inner_loop_state.vulnerability_found and inner_loop_state.iterations:
+            # Get the final iteration's hypothesis
+            final_iteration = inner_loop_state.iterations[-1]
+            if final_iteration.hypothesis and final_iteration.hypothesis.description:
+                novelty_info = self.calculate_hypothesis_novelty(
+                    final_iteration.hypothesis.description
+                )
+
         return ReportMetadata(
             report_id=f"report_{uuid.uuid4().hex[:8]}",
             task_id=inner_loop_state.task_id,
@@ -267,6 +305,7 @@ class ReporterAgent:
             inner_loop_completed_at=inner_loop_state.completed_at,
             generator_model=attack_trace_data.get("configuration", {}).get("generator_model"),
             critic_model=attack_trace_data.get("configuration", {}).get("critic_model"),
+            novelty_info=novelty_info,
         )
 
     # =========================================================================
@@ -338,6 +377,30 @@ class ReporterAgent:
         debate_flag = "enabled" if debate_enabled else "disabled"
         rag_queries = context.get("rag_queries", [])
 
+        # Add novelty information if available
+        novelty_section = ""
+        if metadata.novelty_info:
+            novelty_score = metadata.novelty_info.novelty_score
+            max_sim = metadata.novelty_info.max_similarity
+            top_papers = metadata.novelty_info.top_similar_papers
+
+            novelty_section = f"""
+
+### Novelty Assessment
+- **Novelty Score**: {novelty_score:.3f} (calculated as 1 - max_similarity)
+- **Maximum Similarity**: {max_sim:.3f} (compared against {len(context.get('rag_queries', []))} papers in database)
+- **Most Similar Prior Work**:
+"""
+            for i, paper in enumerate(top_papers, 1):
+                novelty_section += f"\n  {i}. {paper['paper_title']} (similarity: {paper['similarity']:.3f})"
+
+            if novelty_score >= 0.7:
+                novelty_section += "\n- This hypothesis demonstrates **high novelty** compared to existing literature."
+            elif novelty_score >= 0.4:
+                novelty_section += "\n- This hypothesis shows **moderate novelty**, building upon existing approaches."
+            else:
+                novelty_section += "\n- This hypothesis has **low novelty**, closely resembling known methods."
+
         outline_content = f"""### Hypothesis Generation Process
 - Generator model: {generator_model}
 - Critic model: {critic_model}
@@ -347,6 +410,7 @@ class ReporterAgent:
 - Each iteration captures generator proposals and critic assessments before experiments execute.
 - Retrieved context informs refinement; {len(rag_queries)} paper retrieval queries were issued across the loop.
 - Debate transcripts are persisted for judge review and reproducibility.
+{novelty_section}
 
 ### Evaluation Workflow
 - Experiment executors follow the agreed plan, logging outputs to the attack trace (JSON + Markdown).
@@ -578,10 +642,646 @@ Automated vulnerability discovery in machine unlearning represents an important 
             logger.error("Failed to load reporter configuration %s: %s", config_path, exc)
             return {}
 
-    def _get_default_template_path(self) -> Path:
-        """Get default template path."""
-        return self._get_project_root() / "aust" / "configs" / "templates" / "report_template.md"
-
     def _get_project_root(self) -> Path:
         """Return the repository root (two levels above aust package)."""
         return Path(__file__).resolve().parents[3]
+
+    # =========================================================================
+    # Novelty calculation (Story 5.1)
+    # =========================================================================
+
+    def calculate_hypothesis_novelty(self, hypothesis_text: str) -> Optional[NoveltyInfo]:
+        """
+        Calculate novelty score by comparing hypothesis to paper database.
+
+        Novelty score = 1 - max_similarity, where max_similarity is the highest
+        cosine similarity between the hypothesis embedding and all paper embeddings.
+
+        Args:
+            hypothesis_text: Final hypothesis text to evaluate
+
+        Returns:
+            NoveltyInfo with score and top similar papers, or None if calculation fails
+        """
+        try:
+            logger.info("Calculating hypothesis novelty")
+
+            # Initialize RAG system
+            rag = PaperRAG(storage_path=str(self.rag_storage_path))
+
+            # Generate embedding for hypothesis using same model as RAG
+            hyp_embedding = rag.embedding_model.embed(obj=hypothesis_text, task="retrieval.query")
+
+            # Retrieve all paper vectors
+            all_papers = rag.get_all_paper_vectors()
+
+            if not all_papers:
+                logger.warning("No papers found in RAG database for novelty calculation")
+                return None
+
+            # Calculate cosine similarities
+            import numpy as np
+
+            similarities = []
+            for paper in all_papers:
+                paper_vector = np.array(paper["vector"])
+                hyp_vector = np.array(hyp_embedding)
+
+                # Cosine similarity: dot(A, B) / (||A|| * ||B||)
+                cos_sim = np.dot(hyp_vector, paper_vector) / (
+                    np.linalg.norm(hyp_vector) * np.linalg.norm(paper_vector)
+                )
+
+                similarities.append(
+                    {
+                        "arxiv_id": paper["arxiv_id"],
+                        "paper_title": paper["paper_title"],
+                        "similarity": float(cos_sim),
+                    }
+                )
+
+            # Sort by similarity descending
+            similarities.sort(key=lambda x: x["similarity"], reverse=True)
+
+            # Get max similarity and top-3
+            max_similarity = similarities[0]["similarity"] if similarities else 0.0
+            novelty_score = 1.0 - max_similarity
+            top_3 = similarities[:3]
+
+            logger.info(
+                f"Novelty calculation complete: score={novelty_score:.3f}, "
+                f"max_similarity={max_similarity:.3f}, compared_papers={len(similarities)}"
+            )
+
+            return NoveltyInfo(
+                novelty_score=novelty_score,
+                max_similarity=max_similarity,
+                top_similar_papers=top_3,
+            )
+
+        except Exception as exc:
+            logger.error(f"Failed to calculate hypothesis novelty: {exc}", exc_info=True)
+            return None
+
+
+    def _load_iteration_traces(self, traces_dir: Path) -> list[dict[str, Any]]:
+        """
+        Load all per-iteration trace files from directory.
+
+        Args:
+            traces_dir: Directory containing attack_trace_iter_*.json files
+
+        Returns:
+            List of iteration trace dictionaries, sorted by iteration number
+        """
+        if not traces_dir.exists():
+            logger.warning(f"Traces directory not found: {traces_dir}")
+            return []
+
+        trace_files = sorted(traces_dir.glob("attack_trace_iter_*.json"))
+        iterations = []
+
+        for trace_file in trace_files:
+            try:
+                with trace_file.open("r", encoding="utf-8") as f:
+                    trace_data = json.load(f)
+                iterations.append(trace_data)
+                logger.debug(f"Loaded trace: {trace_file.name}")
+            except Exception as exc:
+                logger.warning(f"Failed to load trace {trace_file}: {exc}")
+                continue
+
+        logger.info(f"Loaded {len(iterations)} iteration traces from {traces_dir}")
+        return iterations
+
+    # =========================================================================
+    # AC2: Save Successful Attacks as Seed Templates (Story 5.2)
+    # =========================================================================
+
+    def check_successful_iteration(
+        self,
+        iteration_trace: dict[str, Any],
+        confidence_threshold: float = 0.8,
+    ) -> bool:
+        """
+        Check if an iteration trace represents a successful attack worth saving.
+
+        Args:
+            iteration_trace: Per-iteration trace dictionary from AC7
+            confidence_threshold: Minimum confidence for success (default 0.8)
+
+        Returns:
+            True if attack is successful and should be saved as template
+        """
+        iteration_data = iteration_trace.get("iteration", {})
+
+        vulnerability_detected = iteration_data.get("vulnerability_detected", False)
+        confidence = iteration_data.get("confidence", 0.0)
+
+        is_successful = vulnerability_detected and confidence >= confidence_threshold
+
+        if is_successful:
+            logger.info(
+                f"Successful attack detected: confidence={confidence:.2f}, "
+                f"iteration={iteration_data.get('iteration_number')}"
+            )
+
+        return is_successful
+
+    def generate_seed_template(
+        self,
+        iteration_trace: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        """
+        Generate seed template from successful attack trace using LLM.
+
+        This implements Story 5.2 AC2, using the prompt template from
+        short_report_generator.yaml to extract reusable methodology
+        from successful attacks.
+
+        Args:
+            iteration_trace: Per-iteration trace dictionary from AC7
+
+        Returns:
+            Seed template dictionary or None if generation fails
+        """
+        import os
+        from camel.agents import ChatAgent
+        from camel.configs import ChatGPTConfig
+        from camel.messages import BaseMessage
+        from camel.models import ModelFactory
+        from camel.types import ModelPlatformType
+
+        logger.info("Generating seed template from successful attack")
+
+        try:
+            # Load short report prompt
+            prompts_path = (
+                self._get_project_root() / "aust" / "configs" / "prompts" /
+                "short_report_generator.yaml"
+            )
+
+            if not prompts_path.exists():
+                logger.error(f"Short report prompts not found: {prompts_path}")
+                return None
+
+            with prompts_path.open("r", encoding="utf-8") as f:
+                prompts = yaml.safe_load(f)
+
+            system_prompt_template = prompts.get("system_prompt", "")
+            if not system_prompt_template:
+                logger.error("No system_prompt found in short_report_generator.yaml")
+                return None
+
+            # Format attack trace as JSON string
+            attack_trace_str = json.dumps(iteration_trace, indent=2, ensure_ascii=False)
+            iteration_meta = iteration_trace.get("iteration", {}) if isinstance(iteration_trace, dict) else {}
+            iteration_number = iteration_meta.get("iteration_number")
+            iteration_confidence = iteration_meta.get("confidence")
+            try:
+                iteration_confidence_float = (
+                    float(iteration_confidence)
+                    if iteration_confidence is not None
+                    else float("nan")
+                )
+            except (TypeError, ValueError):
+                iteration_confidence_float = float("nan")
+
+            # Format system prompt with attack trace
+            if "{attack_trace}" in system_prompt_template:
+                system_prompt = system_prompt_template.replace("{attack_trace}", attack_trace_str)
+            else:
+                logger.warning(
+                    "Seed template prompt missing {attack_trace} placeholder; appending trace payload."
+                )
+                system_prompt = f"{system_prompt_template}\n\n{attack_trace_str}"
+
+            # Create LLM agent
+            from aust.src.utils.model_config import load_model_settings
+
+            fallback = {
+                "model_name": "openai/gpt-4o",
+                "config": {
+                    "temperature": 0.3,  # Lower temperature for structured output
+                    "max_tokens": 2000,
+                }
+            }
+            settings = load_model_settings("reporter", fallback)
+            model_name = settings["model_name"]
+            config_dict = settings.get("config", {})
+
+            config = ChatGPTConfig(**config_dict)
+
+            backend = ModelFactory.create(
+                model_platform=ModelPlatformType.OPENAI_COMPATIBLE_MODEL,
+                model_type=model_name,
+                url="https://openrouter.ai/api/v1",
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+                model_config_dict=config.as_dict(),
+            )
+
+            system_message = BaseMessage.make_assistant_message(
+                role_name="TemplateGenerator",
+                content=system_prompt,
+            )
+
+            agent = ChatAgent(system_message=system_message, model=backend)
+
+            # Generate template (system prompt contains the attack trace, no user message needed)
+            user_message = BaseMessage.make_user_message(
+                role_name="User",
+                content="Generate the seed template.",
+            )
+
+            response = agent.step(user_message)
+
+            if not response:
+                logger.warning(
+                    "LLM returned no response for seed template (iteration=%s, confidence=%.2f, trace_chars=%d)",
+                    iteration_number,
+                    iteration_confidence_float,
+                    len(attack_trace_str),
+                )
+                return None
+
+            if not getattr(response, "msgs", None):
+                info = getattr(response, "info", {}) or {}
+                logger.warning(
+                    "Empty response from LLM for seed template (iteration=%s, confidence=%.2f, trace_chars=%d, info=%s)",
+                    iteration_number,
+                    iteration_confidence_float,
+                    len(attack_trace_str),
+                    info or "<none>",
+                )
+                return None
+
+            content = response.msgs[-1].content.strip()
+
+            # Extract content if wrapped in Markdown code fences
+            if "```yaml" in content:
+                yaml_start = content.find("```yaml") + 7
+                yaml_end = content.find("```", yaml_start)
+                content = content[yaml_start:yaml_end].strip()
+            elif "```json" in content:
+                json_start = content.find("```json") + 7
+                json_end = content.find("```", json_start)
+                content = content[json_start:json_end].strip()
+            elif "```" in content:
+                json_start = content.find("```") + 3
+                json_end = content.find("```", json_start)
+                content = content[json_start:json_end].strip()
+
+            try:
+                seed_template_data = yaml.safe_load(content)
+            except Exception as exc:
+                logger.error("Failed to parse YAML from seed template: %s", exc)
+                logger.debug("LLM response (raw): %s", content)
+                return None
+
+            if not isinstance(seed_template_data, dict):
+                logger.error(
+                    "Seed template LLM response was not a mapping; got %s",
+                    type(seed_template_data),
+                )
+                return None
+
+            if "seed_template" in seed_template_data and isinstance(
+                seed_template_data["seed_template"], dict
+            ):
+                seed_template = self._normalize_seed_template_structure(
+                    seed_template_data["seed_template"]
+                )
+            else:
+                seed_template = self._normalize_seed_template_structure(seed_template_data)
+
+            logger.info(f"Generated seed template: {seed_template.get('attack_type', 'unknown')}")
+
+            return seed_template
+
+        except Exception as exc:
+            logger.error(f"Failed to generate seed template: {exc}", exc_info=True)
+            return None
+
+    def save_successful_attack_template(
+        self,
+        seed_template: dict[str, Any],
+        task_context: Optional[dict[str, Any]] = None,
+        templates_dir: Optional[Path] = None,
+    ) -> Optional[Path]:
+        """
+        Save successful attack as reusable seed template.
+
+        Args:
+            seed_template: Template dictionary from generate_seed_template()
+            task_context: Original task metadata (model, target, etc.)
+            templates_dir: Base templates directory (default: aust/configs/hypothesis/)
+
+        Returns:
+            Path to saved template file or None if skipped/failed
+        """
+        logger.info("Saving successful attack as seed template")
+
+        try:
+            # Determine target type and attack ID
+            target_type = seed_template.get("target_type", "general")
+            attack_id = seed_template.get("task_id", "")
+            attack_type = seed_template.get("attack_type", "")
+
+            if attack_type:
+                safe_attack_type = re.sub(r"[^a-zA-Z0-9_-]+", "_", attack_type.strip()).strip("_")
+                if not safe_attack_type:
+                    safe_attack_type = f"attack_{uuid.uuid4().hex[:8]}"
+            else:
+                safe_attack_type = f"attack_{uuid.uuid4().hex[:8]}"
+
+            if attack_id:
+                filename_stem = safe_attack_type
+            else:
+                attack_id = safe_attack_type
+                filename_stem = safe_attack_type
+
+            # Determine templates directory
+            if templates_dir is None:
+                templates_dir = self._get_project_root() / "aust" / "configs" / "hypothesis"
+
+            raw_payload = seed_template.get("raw_template")
+            if isinstance(raw_payload, dict):
+                target_type = raw_payload.get("target_type", target_type)
+
+            target_dir = templates_dir / target_type
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Check for duplicates using similarity
+            if self._is_duplicate_template(seed_template, target_dir):
+                logger.info(f"Skipping template save - high similarity to existing template")
+                return None
+
+            # Build full template structure matching AC1 schema
+            summary_text = seed_template.get("summary") or seed_template.get("methodology", "")
+            source_paper = seed_template.get("source_paper", "empirical") or "empirical"
+            default_payload = {}
+            if isinstance(raw_payload, dict):
+                summary_text = raw_payload.get("summary", summary_text)
+                source_paper = raw_payload.get("source_paper", source_paper)
+                target_type = raw_payload.get("target_type", target_type)
+                default_payload = deepcopy(raw_payload.get("default_hypothesis", {}) or {})
+
+            default_payload.setdefault("attack_type", seed_template.get("attack_type", "unknown"))
+            default_payload.setdefault("target_type", target_type)
+            description_text = default_payload.get("description", seed_template.get("methodology", "")) or ""
+            experiment_text = default_payload.get("experiment_design", seed_template.get("experiment_design", "")) or ""
+            default_payload["description"] = FoldedString(str(description_text).strip())
+            default_payload["experiment_design"] = LiteralString(str(experiment_text).strip())
+            default_payload["confidence_score"] = self._coerce_float(
+                default_payload.get("confidence_score", seed_template.get("confidence_score")),
+                default=0.0,
+                field="confidence_score",
+            )
+            default_payload["novelty_score"] = self._coerce_float(
+                default_payload.get("novelty_score", seed_template.get("novelty_score")),
+                default=0.0,
+                field="novelty_score",
+            )
+
+            summary_render = FoldedString(str(summary_text or "").strip())
+            seed_template_block: dict[str, Any] = {
+                "id": attack_id,
+                "summary": summary_render,
+                "target_type": target_type,
+                "source_paper": source_paper,
+                "default_hypothesis": default_payload,
+            }
+            if task_context:
+                seed_template_block["task_context"] = task_context
+
+            full_template = {"seed_template": seed_template_block}
+
+            # Save as YAML file
+            template_file = target_dir / f"{filename_stem}.yaml"
+
+            with template_file.open("w", encoding="utf-8") as f:
+                yaml.dump(
+                    full_template,
+                    f,
+                    Dumper=TemplateSafeDumper,
+                    default_flow_style=False,
+                    sort_keys=False,
+                    allow_unicode=True,
+                )
+
+            logger.info(f"Saved seed template: {template_file}")
+            return template_file
+
+        except Exception as exc:
+            logger.error(f"Failed to save seed template: {exc}", exc_info=True)
+            return None
+
+    def save_successful_templates_from_traces(
+        self,
+        task_id: str,
+        *,
+        traces_dir: Optional[Path] = None,
+        task_context: Optional[Any] = None,
+        confidence_threshold: float = 0.8,
+    ) -> list[Path]:
+        """
+        Inspect per-iteration traces and persist successful attacks as seed templates.
+
+        Args:
+            task_id: Identifier for the current task
+            traces_dir: Directory containing attack_trace_iter_*.json files
+            task_context: Additional metadata (TaskSpec or dict) to store with the template
+            confidence_threshold: Minimum confidence to treat an attack as successful
+
+        Returns:
+            List of template paths that were saved.
+        """
+        if traces_dir is None:
+            traces_dir = self.output_dir / task_id / "attack_traces"
+
+        iteration_traces = self._load_iteration_traces(traces_dir)
+        if not iteration_traces:
+            logger.info(
+                "No iteration traces found at %s; skipping template capture for task %s",
+                traces_dir,
+                task_id,
+            )
+            return []
+
+        saved_paths: list[Path] = []
+
+        for trace in iteration_traces:
+            if not self.check_successful_iteration(trace, confidence_threshold):
+                continue
+
+            template = self.generate_seed_template(trace)
+            if not template:
+                continue
+
+            saved_path = self.save_successful_attack_template(
+                template,
+                task_context=None,
+            )
+            if saved_path:
+                saved_paths.append(saved_path)
+
+        if saved_paths:
+            logger.info(
+                "Saved %d new seed template(s) for task %s",
+                len(saved_paths),
+                task_id,
+            )
+        else:
+            logger.info("No new seed templates saved for task %s", task_id)
+
+        return saved_paths
+
+    def _normalize_seed_template_structure(
+        self, template_payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Convert YAML seed template payload into the flattened structure the reporter expects.
+        """
+        template_payload = template_payload or {}
+
+        def _sanitise(payload: dict[str, Any]) -> dict[str, Any]:
+            clean = dict(payload)
+            clean.pop("task_context", None)
+            clean.pop("created_at", None)
+            return clean
+
+        default_hypothesis = template_payload.get("default_hypothesis", {}) or {}
+
+        methodology = default_hypothesis.get("description") or template_payload.get("summary", "")
+        experiment_design = default_hypothesis.get("experiment_design", "")
+
+        normalized = {
+            "task_id": template_payload.get("id") or template_payload.get("task_id"),
+            "target_type": template_payload.get("target_type")
+            or default_hypothesis.get("target_type", "general"),
+            "attack_type": default_hypothesis.get("attack_type")
+            or template_payload.get("attack_type"),
+            "methodology": methodology,
+            "summary": template_payload.get("summary", ""),
+            "experiment_design": experiment_design,
+            "source_paper": template_payload.get("source_paper", "empirical"),
+            "confidence_score": default_hypothesis.get("confidence_score", 0.0),
+            "novelty_score": default_hypothesis.get("novelty_score", 0.0),
+            "raw_template": _sanitise(template_payload),
+        }
+
+        return normalized
+
+    def _is_duplicate_template(
+        self,
+        new_template: dict[str, Any],
+        target_dir: Path,
+        similarity_threshold: float = 0.9,
+    ) -> bool:
+        """
+        Check if template is too similar to existing templates.
+
+        Args:
+            new_template: New template to check
+            target_dir: Directory containing existing templates
+            similarity_threshold: Maximum similarity before considering duplicate
+
+        Returns:
+            True if template is a duplicate (similarity > threshold)
+        """
+        if not target_dir.exists():
+            return False
+
+        new_methodology = new_template.get("methodology", "")
+        new_experiment = new_template.get("experiment_design", "")
+        new_text = f"{new_methodology} {new_experiment}"
+
+        if not new_text.strip():
+            return False
+
+        # Check against existing templates
+        for template_file in target_dir.glob("*.yaml"):
+            try:
+                with template_file.open("r", encoding="utf-8") as f:
+                    existing = yaml.safe_load(f)
+
+                existing_seed = existing.get("seed_template", {})
+                existing_hyp = existing_seed.get("default_hypothesis", {})
+
+                existing_desc = existing_hyp.get("description", "")
+                existing_design = existing_hyp.get("experiment_design", "")
+                existing_text = f"{existing_desc} {existing_design}"
+
+                if not existing_text.strip():
+                    continue
+
+                # Simple similarity check (can be improved with embeddings)
+                similarity = self._calculate_text_similarity(new_text, existing_text)
+
+                if similarity > similarity_threshold:
+                    logger.info(
+                        f"High similarity ({similarity:.2f}) to existing template: "
+                        f"{template_file.name}"
+                    )
+                    return True
+
+            except Exception as exc:
+                logger.warning(f"Failed to check similarity with {template_file}: {exc}")
+                continue
+
+        return False
+
+    @staticmethod
+    def _coerce_float(value: Any, *, default: float = 0.0, field: str = "") -> float:
+        """Best-effort conversion of arbitrary LLM output to float."""
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return default
+            try:
+                return float(stripped)
+            except ValueError:
+                match = re.search(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", stripped)
+                if match:
+                    try:
+                        return float(match.group(0))
+                    except ValueError:
+                        pass
+                logger.warning(
+                    "Unable to parse float for field '%s' from value '%s'; using default %.2f",
+                    field,
+                    value,
+                    default,
+                )
+        return default
+
+    def _calculate_text_similarity(self, text1: str, text2: str) -> float:
+        """
+        Calculate simple text similarity using word overlap.
+
+        This is a basic implementation. Can be improved with:
+        - Sentence embeddings (using existing RAG infrastructure)
+        - Edit distance metrics
+        - More sophisticated NLP techniques
+
+        Args:
+            text1: First text
+            text2: Second text
+
+        Returns:
+            Similarity score between 0.0 and 1.0
+        """
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+
+        if not words1 or not words2:
+            return 0.0
+
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+
+        return len(intersection) / len(union) if union else 0.0

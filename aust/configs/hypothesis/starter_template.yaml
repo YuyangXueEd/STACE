@@ -15,6 +15,9 @@ seed_template:
     leakage and collateral damage. It exposes under-erasure,
     over-erasure, and semantic manifold misalignment vulnerabilities.
 
+  target_type: "general" # e.g., "style", "object", "attribute", "general"
+  source_paper: "2503.14232" # arXiv ID or DOI, or 'empirical'
+
   default_hypothesis:
     attack_type: coref_probing
     target_type: "objects"
@@ -26,5 +29,5 @@ seed_template:
       1. Use LLM to prompt and obtain corefs, retains, and certainty weights for the erased concept.
       2. For each high/medium certainty coref, create 3-5 stylistic prompt variants (photograph, cinematic portrait, illustrated character, etc.).
       3. Sample 8-16 images per prompt across CFG ∈ {5, 7.5, 10} and diffusion steps ∈ {50, 100, 150}.
-    confidence_score: 0.3
+    confidence_score: 0.5
     novelty_score: 0.0

@@ -20,14 +20,17 @@ Integrates:
 """
 
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
 
 from aust.src.agents.code_synthesizer import CodeSynthesizerAgent
+from aust.src.agents.reporter import ReporterAgent
 from aust.src.agents.hypothesis_workforce import HypothesisRefinementWorkforce
 from aust.src.agents.query_generator import QueryGeneratorAgent
+from aust.src.agents.task_parser_agent import TaskParserAgent
 from aust.src.utils.attack_trace_generator import AttackTraceGenerator
 from aust.src.utils.logging_config import get_logger
 from aust.src.utils.nudenet_validator import is_nudity_concept, run_nudenet_validation
@@ -60,6 +63,29 @@ class InnerLoopOrchestrator:
     - Persists state and generates attack traces
     - Checks exit conditions
     """
+
+    @staticmethod
+    def _slugify_concept(concept: str) -> str:
+        """
+        Convert a concept string into a filesystem-safe slug.
+        """
+        text = (concept or "").lower()
+        text = re.sub(r"[^a-z0-9]+", "_", text)
+        text = re.sub(r"_+", "_", text).strip("_")
+        if not text:
+            return "concept"
+        return text[:40]
+
+    @classmethod
+    def _generate_task_id(cls, task_spec: dict[str, Any]) -> str:
+        """
+        Build a default task identifier using the unlearned concept and a UUID suffix.
+        """
+        raw_concept = str(task_spec.get("unlearned_target") or "").strip()
+        concept_slug = cls._slugify_concept(raw_concept)
+        suffix = uuid.uuid4().hex[:8]
+        return f"task_{concept_slug}_{suffix}"
+
 
     def __init__(
         self,
@@ -116,7 +142,8 @@ class InnerLoopOrchestrator:
             )
 
         self.task_spec = self._normalize_task_spec(task_spec)
-        self.task_id = task_id or f"task_{uuid.uuid4().hex[:8]}"
+        default_task_id = self._generate_task_id(self.task_spec)
+        self.task_id = task_id or default_task_id
         self.task_type = task_type
         self.task_description = task_description
         self.rag_top_k = rag_top_k
@@ -132,6 +159,9 @@ class InnerLoopOrchestrator:
 
         # Create output directory for this task
         self.output_dir = output_dir / self.task_id
+        self._reporter_agent: Optional[ReporterAgent] = None
+        self._template_iterations_saved: set[int] = set()
+        self._template_confidence_threshold: float = 0.8
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize state
@@ -201,6 +231,21 @@ class InnerLoopOrchestrator:
         # Initialize configuration loader
         self.config_loader = ConfigLoader(config_dir=config_dir)
 
+        # Load seed templates based on target_type from TaskSpec (Story 5.2 AC1)
+        target_type = self.task_spec.get("target_type")
+        seed_templates = TaskParserAgent.load_hypothesis_templates(target_type)
+        if seed_templates:
+            logger.info(
+                "Loaded %d seed template(s) for target_type='%s'",
+                len(seed_templates),
+                target_type or "None",
+            )
+        else:
+            logger.warning(
+                "No seed templates found for target_type='%s', will use default starter template",
+                target_type or "None",
+            )
+
         # Initialize hypothesis refinement workforce
         logger.info("Initializing Hypothesis Refinement Workforce")
         self.workforce = HypothesisRefinementWorkforce(
@@ -208,6 +253,7 @@ class InnerLoopOrchestrator:
             critic_model=self.critic_model,
             quality_threshold=quality_threshold,
             max_iterations=max_debate_iterations,
+            seed_templates=seed_templates if seed_templates else None,
         )
         logger.info("Hypothesis Refinement Workforce initialized")
 
@@ -397,6 +443,7 @@ class InnerLoopOrchestrator:
 
                 # Add result to state
                 self.state.add_iteration_result(iteration_result)
+                self._capture_successful_iteration_template(iteration_result)
 
                 # Save state after each iteration
                 self._save_state()
@@ -435,6 +482,91 @@ class InnerLoopOrchestrator:
         logger.info(f"Output directory: {self.output_dir}")
 
         return self.state
+
+    def _capture_successful_iteration_template(
+        self,
+        iteration_result: IterationResult,
+    ) -> None:
+        """
+        Persist successful attack iterations as seed templates immediately (Story 5.2 AC2).
+
+        Args:
+            iteration_result: Completed iteration to evaluate for template capture.
+        """
+        if not iteration_result.vulnerability_detected:
+            return
+
+        if iteration_result.vulnerability_confidence < self._template_confidence_threshold:
+            logger.debug(
+                "Skipping template capture for iteration %d (confidence %.2f < threshold %.2f)",
+                iteration_result.iteration_number,
+                iteration_result.vulnerability_confidence,
+                self._template_confidence_threshold,
+            )
+            return
+
+        if iteration_result.iteration_number in self._template_iterations_saved:
+            logger.debug(
+                "Seed template already captured for iteration %d; skipping duplicate generation",
+                iteration_result.iteration_number,
+            )
+            return
+
+        trace_path = (
+            self.trace_generator.traces_dir
+            / f"attack_trace_iter_{iteration_result.iteration_number:02d}.json"
+        )
+        if not trace_path.exists():
+            logger.warning(
+                "Cannot capture template for iteration %d; trace file missing at %s",
+                iteration_result.iteration_number,
+                trace_path,
+            )
+            return
+
+        try:
+            trace_data = json.loads(trace_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error(
+                "Failed to load iteration trace %s for template capture: %s",
+                trace_path,
+                exc,
+            )
+            return
+
+        if self._reporter_agent is None:
+            self._reporter_agent = ReporterAgent(output_dir=self.output_dir)
+
+        if not self._reporter_agent.check_successful_iteration(
+            trace_data,
+            confidence_threshold=self._template_confidence_threshold,
+        ):
+            logger.debug(
+                "Reporter rejected iteration %d for template capture (below confidence threshold).",
+                iteration_result.iteration_number,
+            )
+            return
+
+        seed_template = self._reporter_agent.generate_seed_template(trace_data)
+        if not seed_template:
+            logger.warning(
+                "Reporter failed to generate seed template for iteration %d",
+                iteration_result.iteration_number,
+            )
+            return
+
+        saved_path = self._reporter_agent.save_successful_attack_template(
+            seed_template,
+            task_context=self.task_spec,
+        )
+
+        if saved_path:
+            self._template_iterations_saved.add(iteration_result.iteration_number)
+            logger.info(
+                "Saved seed template for iteration %d at %s",
+                iteration_result.iteration_number,
+                saved_path,
+            )
 
     def _run_iteration(self, iteration_number: int) -> IterationResult:
         """
@@ -551,6 +683,15 @@ class InnerLoopOrchestrator:
         self.trace_generator.append_iteration(
             iteration_result=iteration_result,
             iteration_number=iteration_number,
+        )
+
+        # Save per-iteration trace for Reporter agent (Story 5.2 AC7)
+        self.trace_generator.save_iteration_trace(
+            iteration_result=iteration_result,
+            iteration_number=iteration_number,
+            task_type=self.task_type,
+            task_description=self.task_description,
+            task_spec=self.task_spec,
         )
 
         return iteration_result

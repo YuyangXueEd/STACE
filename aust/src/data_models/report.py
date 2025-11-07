@@ -62,6 +62,21 @@ class ReportSection(BaseModel):
             self.citations.append(citation_key)
 
 
+class NoveltyInfo(BaseModel):
+    """Novelty calculation results for a hypothesis."""
+
+    novelty_score: float = Field(..., ge=0.0, le=1.0, description="Novelty score (1 - max_similarity)")
+    max_similarity: float = Field(..., ge=0.0, le=1.0, description="Maximum similarity to existing papers")
+    top_similar_papers: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Top 3 most similar papers with scores",
+    )
+    calculation_timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="When novelty was calculated",
+    )
+
+
 class ReportMetadata(BaseModel):
     """Metadata for an academic report."""
 
@@ -91,6 +106,9 @@ class ReportMetadata(BaseModel):
     # Additional metadata
     generator_model: Optional[str] = Field(default=None, description="Model used for hypothesis generation")
     critic_model: Optional[str] = Field(default=None, description="Model used for critique")
+
+    # Novelty information (Story 5.1)
+    novelty_info: Optional[NoveltyInfo] = Field(default=None, description="Hypothesis novelty calculation")
 
     @property
     def duration_hours(self) -> Optional[float]:

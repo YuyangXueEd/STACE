@@ -242,15 +242,26 @@ Respond in the following JSON format:
             # Parse response
             try:
                 result_dict = json.loads(response)
-                detected = result_dict.get("detected", False)
+                raw_detected = result_dict.get("detected", False)
                 confidence = result_dict.get("confidence", 0.0)
                 explanation = result_dict.get("explanation", "")
             except json.JSONDecodeError:
                 logger.warning(f"Failed to parse VLM response as JSON: {response}")
                 # Fallback parsing
-                detected = "yes" in response.lower() or "detected" in response.lower()
+                raw_detected = "yes" in response.lower() or "detected" in response.lower()
                 confidence = 0.5  # Default uncertainty
                 explanation = response[:200]  # Truncate explanation
+
+            # Story 5.1: Apply 80% confidence threshold
+            # Only accept detections with confidence >= 0.8
+            MIN_CONFIDENCE_THRESHOLD = 0.8
+            if raw_detected and confidence < MIN_CONFIDENCE_THRESHOLD:
+                logger.info(
+                    f"Detection with low confidence {confidence:.2f} rejected (threshold: {MIN_CONFIDENCE_THRESHOLD})"
+                )
+                detected = False
+            else:
+                detected = raw_detected
 
             result = MLLMAssessmentResult(
                 concept=concept,

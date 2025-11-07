@@ -1,49 +1,7 @@
 # Reporter Agent Model Configuration (Story 4.1, 4.2)
 
-model:
-  # Primary model for report content generation
-  name: "openai/gpt-5-mini"
-
-  # Generation parameters
-  temperature: 0.5  # Balanced between creativity and consistency
-  max_tokens: 128_000  # Sufficient for section generation
-
-  # Fallback model if primary unavailable
-  fallback_model: "openai/gpt-5-nano"
-
-# Report generation settings
-report:
-  # Output settings
-  output_format: "markdown"  # MVP: markdown only (latex, pdf future)
-  encoding: "utf-8"
-  line_endings: "unix"  # LF
-
-  # Section generation
-  generate_abstract: true
-  include_metadata_header: true
-
-  # Word count targets (for Story 4.2 content generation)
-  target_word_counts:
-    introduction: 650
-    methods: 1250
-    experiments: 800
-    results: 1250
-    discussion: 1000
-    conclusion: 500
-
-  # Citation settings
-  citation_style: "academic"  # [Author, Year] format
-  max_citations_per_section: 15
-  auto_generate_bibliography: true
-
-# Template configuration
-template:
-  path: "aust/configs/templates/report_template.md"
-  use_custom_template: false
-  custom_template_path: null
-
-# Logging
-logging:
-  log_section_generation: true
-  log_word_counts: true
-  log_citation_extraction: true
+model_name: "openai/gpt-5-mini"
+config:
+  temperature: 0.5
+  max_tokens: 128000
+fallback_model: "openai/gpt-5-nano"

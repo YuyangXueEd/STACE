@@ -344,3 +344,59 @@ class PaperRAG:
         except Exception as e:
             logger.error(f"Failed to get collection info: {e}")
             return {"error": str(e)}
+
+    def get_all_paper_vectors(self, limit: int = 1000) -> List[Dict[str, Any]]:
+        """Retrieve all paper vectors and metadata from the collection.
+
+        Used for novelty calculation by comparing hypothesis embeddings
+        against all papers in the database.
+
+        Args:
+            limit: Maximum number of vectors to retrieve per scroll batch
+
+        Returns:
+            List of dicts with keys: arxiv_id, paper_title, vector, metadata
+        """
+        try:
+            client = self.storage.client
+            all_papers = []
+            offset = None
+
+            logger.info("Retrieving all paper vectors for novelty calculation")
+
+            while True:
+                scroll_result = client.scroll(
+                    collection_name=self.collection_name,
+                    limit=limit,
+                    offset=offset,
+                    with_payload=True,
+                    with_vectors=True,
+                )
+
+                points, next_offset = scroll_result
+
+                if not points:
+                    break
+
+                for point in points:
+                    payload = point.payload or {}
+                    all_papers.append(
+                        {
+                            "arxiv_id": payload.get("arxiv_id", "unknown"),
+                            "paper_title": payload.get("paper_title", "unknown"),
+                            "vector": point.vector,
+                            "metadata": payload,
+                        }
+                    )
+
+                if next_offset is None:
+                    break
+
+                offset = next_offset
+
+            logger.info(f"Retrieved {len(all_papers)} paper vectors")
+            return all_papers
+
+        except Exception as e:
+            logger.error(f"Failed to retrieve all paper vectors: {e}", exc_info=True)
+            return []

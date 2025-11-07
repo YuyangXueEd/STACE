@@ -86,7 +86,7 @@ class ConfigLoader:
                 resolved_templates = []
                 for template in seed_templates:
                     if isinstance(template, str) and template.startswith("file:"):
-                        # Format: "file:prompts/starter_template.yaml"
+                        # Format: "file:hypothesis/starter_template.yaml"
                         ref_path = template[5:]  # Remove "file:" prefix
                         resolved_templates.extend(self._load_template_from_file(ref_path))
                     else:
@@ -153,14 +153,14 @@ class ConfigLoader:
 
     def _load_starter_task_templates(self) -> list[dict]:
         """Load task templates from starter_template.yaml."""
-        return self._load_template_from_file("prompts/starter_template.yaml")
+        return self._load_template_from_file("hypothesis/starter_template.yaml")
 
     def _load_template_from_file(self, relative_path: str) -> list[dict]:
         """
         Load task templates from an external file.
 
         Args:
-            relative_path: Path relative to config_dir (e.g., "prompts/starter_template.yaml")
+            relative_path: Path relative to config_dir (e.g., "hypothesis/starter_template.yaml")
 
         Returns:
             List of template dictionaries

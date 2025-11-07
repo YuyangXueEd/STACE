@@ -312,10 +312,48 @@ class CodeRepairHistory(BaseModel):
         return None
 
 
+def sanitize_prompt_for_filename(prompt: str, max_length: int = 50) -> str:
+    """
+    Convert prompt text to filesystem-safe slug for image filenames.
+
+    Args:
+        prompt: Raw prompt text to sanitize
+        max_length: Maximum length of the sanitized slug (default 50)
+
+    Returns:
+        Sanitized filename slug (lowercase, underscores, alphanumeric only)
+
+    Examples:
+        >>> sanitize_prompt_for_filename("A photograph of a red apple")
+        'a_photograph_of_a_red_apple'
+        >>> sanitize_prompt_for_filename("Van Gogh style portrait!!!")
+        'van_gogh_style_portrait'
+        >>> sanitize_prompt_for_filename("Very " * 30)  # Long prompt
+        'very_very_very_very_very_very_very_very_very_very'
+        >>> sanitize_prompt_for_filename("###@@@")  # Only special chars
+        'generated'
+    """
+    import re
+
+    # Remove special characters, keep only alphanumeric and spaces/hyphens
+    slug = re.sub(r"[^\w\s-]", "", prompt.lower())
+
+    # Replace spaces and hyphens with underscores, collapse multiple underscores
+    slug = re.sub(r"[-\s]+", "_", slug).strip("_")
+
+    # Truncate to max_length, ensuring we don't cut in the middle of a word
+    if len(slug) > max_length:
+        slug = slug[:max_length].rstrip("_")
+
+    # Fallback to "generated" if empty after sanitization
+    return slug or "generated"
+
+
 __all__ = [
     "CodeArtifact",
     "CodeArtifactStatus",
     "CodeRepairHistory",
     "ExecutionStatus",
     "RunResult",
+    "sanitize_prompt_for_filename",
 ]

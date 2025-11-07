@@ -28,6 +28,11 @@ user_prompt_template: |
   - model_version
   - unlearned_target
   - unlearning_method
+  - target_type: Classify the unlearned_target into one of three categories:
+    * "object" - Concrete physical entities (e.g., "apple", "church", "dog", "car", "person")
+    * "abstract" - Conceptual ideas or attributes (e.g., "nudity", "violence", "politics", "religion", "gore")
+    * "style" - Artistic styles or aesthetics (e.g., "Van Gogh", "anime", "cubism", "impressionism", "watercolor")
+    If uncertain, use your best judgment based on these examples.
 
   ### Provided Context
   - task_type: {task_type}
@@ -37,7 +42,8 @@ user_prompt_template: |
     "model_name": null | string,
     "model_version": null | string,
     "unlearned_target": null | string,
-    "unlearning_method": null | string
+    "unlearning_method": null | string,
+    "target_type": null | "object" | "abstract" | "style"
   }}
 
   PROMPT:

@@ -8,16 +8,16 @@ loop experiment from the CLI.  Typical usage::
 
     python aust/scripts/main.py \
         --task-type concept_erasure \
-        --prompt "Attack Stable Diffusion 1.4 unlearned with Van Gogh style [with ESD]" \
-        --unlearned-model-path data/unlearned_models/esd/stable-diffusion/Van_Gogh_style/esd-Van_Gogh_style-from-Van_Gogh_style-esdx-pipeline \
+        --prompt "Attack Stable Diffusion 1.4 unlearned with Mickey Mouse" \
+        --unlearned-model-path /data/users/yyx/onProject/CAUST/data/unlearned_models/mace/stable-diffusion/mickymouse/mace-mickymouse-pipeline/ \
         --model-name "Stable Diffusion" \
         --model-version "1.4" \
-        --unlearned-target "Van Gogh style" \
-        --unlearning-method "ESD" \
+        --unlearned-target "Mickey Mouse" \
         --max-iterations 10 \
         --max-debate-rounds 2 \
-        --outer-iterations 3 \
-        --stop-on-vulnerability
+        --skip-judge \
+        --stop-on-vulnerability 
+        
 
 
 The script can also resume from a saved `loop_state.json` via `--resume-state`.
@@ -190,14 +190,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--stop-on-vulnerability",
         dest="stop_on_vulnerability",
         action="store_true",
-        default=True,
-        help="Stop the loop early when a high-confidence vulnerability is detected (default: enabled).",
+        default=False,
+        help="Stop the loop early when a high-confidence vulnerability is detected (default: disabled).",
     )
     loop_group.add_argument(
         "--no-stop-on-vulnerability",
         dest="stop_on_vulnerability",
         action="store_false",
-        help="Disable early stopping when a vulnerability is detected.",
+        help="Disable early stopping when a vulnerability is detected (default).",
     )
     loop_group.add_argument(
         "--vulnerability-stop-threshold",
@@ -523,29 +523,37 @@ def _process_inner_loop_outputs(
     else:
         _run_judge_committee(args, state, report, report_path)
 
-    return report, report_path
-
     reporter = ReporterAgent(output_dir=state.output_dir)
-
     attack_trace_dir = state.output_dir / "attack_traces"
-    attack_trace_json_path = attack_trace_dir / f"trace_{state.task_id}.json"
 
-    attack_trace_md_path = state.attack_trace_file
-    if not attack_trace_md_path:
-        attack_trace_md_path = attack_trace_dir / f"trace_{state.task_id}.md"
-
-    try:
-        report = reporter.generate_report(
-            inner_loop_state=state,
-            attack_trace_json_path=attack_trace_json_path,
-            attack_trace_md_path=attack_trace_md_path,
-            retrieved_papers=None,
+    # AC2: Persist successful attacks as reusable seed templates
+    saved_templates = reporter.save_successful_templates_from_traces(
+        state.task_id,
+        traces_dir=attack_trace_dir,
+        task_context=getattr(state, "task_spec", None),
+    )
+    if saved_templates:
+        logger.info(
+            "Successful attacks captured as templates: %s",
+            ", ".join(str(path) for path in saved_templates),
         )
-        report_path = reporter.save_report(report, state.task_id)
-        return report, report_path
-    except Exception as exc:  # pragma: no cover - safeguard around final reporting
-        logger.error("Failed to generate report: %s", exc, exc_info=True)
-        return None
+
+    # AC4: Generate long-term report via LongTermMemoryAgent
+    try:
+        from aust.src.agents.long_term_memory_agent import LongTermMemoryAgent
+
+        memory_agent = LongTermMemoryAgent()
+        long_report_path = memory_agent.generate_long_term_report(
+            task_id=state.task_id,
+            traces_dir=attack_trace_dir,
+            output_dir=state.output_dir,
+        )
+        if long_report_path:
+            logger.info("Long-term memory report saved to %s", long_report_path)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to generate long-term memory report: %s", exc)
+
+    return report, report_path
 
 
 def _run_judge_committee(

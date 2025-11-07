@@ -33,7 +33,7 @@ system_prompt: |
   {
     "attack_type": "...", // A short naming of the attack strategy, e.g., "coref_probing", "semantic_entanglement"
     "description": "...", // Natural language description of the hypothesis
-    "target_type": "...", // Abstract category of the unlearned target (object, style, abstract, behaviour, etc.)
+    "target_type": "...", // target_type from TaskSpec (e.g., "style", "object", "abstract", "general")
     "experiment_design": "...", // Detailed experimental setup to validate the hypothesis
     "confidence_score": 0.0-1.0, // Generator's confidence in hypothesis success
     "novelty_score": 0.0-1.0 // Estimated novelty based on memory/RAG similarity

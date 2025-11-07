@@ -52,6 +52,7 @@ logger = get_logger(__name__)
 
 AUST_ROOT = Path(__file__).resolve().parents[2]
 PROMPTS_DIR = AUST_ROOT / "configs" / "prompts"
+HYPOTHESIS_DIR = AUST_ROOT / "configs" / "hypothesis"
 MODELS_DIR = AUST_ROOT / "configs" / "models"
 GENERATOR_PROMPT_FILES = {
     "concept_erasure": "hypothesis_generator_concept_erasure.yaml",
@@ -59,7 +60,7 @@ GENERATOR_PROMPT_FILES = {
 CRITIC_PROMPT_FILES = {
     "concept_erasure": "critic.yaml",
 }
-STARTER_TEMPLATE_PATH = PROMPTS_DIR / "starter_template.yaml"
+STARTER_TEMPLATE_PATH = HYPOTHESIS_DIR / "starter_template.yaml"
 
 
 def _load_model_settings_strict(name: str) -> dict[str, Any]:
@@ -113,6 +114,7 @@ class HypothesisRefinementWorkforce:
         critic_model: Optional[str] = None,
         quality_threshold: float = 0.75,
         max_iterations: int = 2,
+        seed_templates: Optional[list[dict[str, Any]]] = None,
     ) -> None:
         """
         Initialize the workforce.
@@ -122,6 +124,8 @@ class HypothesisRefinementWorkforce:
             critic_model: Override model for critic.
             quality_threshold: Score threshold that marks high-quality hypotheses.
             max_iterations: Maximum internal debate rounds (kept for config parity).
+            seed_templates: Optional list of seed templates to use for hypothesis generation.
+                If None, falls back to loading the default starter_template.yaml.
         """
         self.generator_model = generator_model or self.DEFAULT_GENERATOR_MODEL
         self.critic_model = critic_model or self.DEFAULT_CRITIC_MODEL
@@ -152,7 +156,15 @@ class HypothesisRefinementWorkforce:
 
         self._generator_prompt_cache: dict[str, dict[str, Any]] = {}
         self._critic_prompt_cache: dict[str, dict[str, Any]] = {}
-        self._starter_template = self._load_starter_template()
+
+        # Load seed templates if provided, otherwise fall back to starter_template.yaml
+        if seed_templates is not None:
+            self._seed_templates = seed_templates
+            logger.info("Using %d provided seed template(s)", len(seed_templates))
+        else:
+            self._seed_templates = [self._load_starter_template()]
+            logger.info("Using default starter_template.yaml")
+
         self._max_retrieved_papers = 3
 
         logger.info(
@@ -824,31 +836,44 @@ class HypothesisRefinementWorkforce:
         return "\n".join(lines) + "\n"
 
     def _render_starter_template(self, stage: str) -> str:
+        """Render seed templates section for hypothesis generation."""
         if stage != "starter":
             return ""
 
-        template = self._starter_template
-        default_hypothesis = template.get("default_hypothesis", {})
+        if not self._seed_templates:
+            return ""
 
-        lines = [
-            "### Starter Hypothesis Template",
-            f"- ID: {template.get('id', 'unknown')}",
-            f"- Summary: {self._normalize_text(template.get('summary'))}",
-            "",
-            "#### Default Hypothesis",
-        ]
+        lines = ["### Seed Hypothesis Templates"]
+        lines.append("")
+        lines.append("Use these seed templates as inspiration for your hypothesis generation.")
+        lines.append("You may adapt, combine, or build upon these patterns while maintaining")
+        lines.append("novelty and alignment with the TaskSpec.")
+        lines.append("")
 
-        for key in [
-            "attack_type",
-            "target",
-            "description",
-            "experiment_design",
-            "confidence_score",
-            "novelty_score",
-        ]:
-            value = self._normalize_text(default_hypothesis.get(key))
-            if value:
-                lines.append(f"- {key}: {value}")
+        for idx, template in enumerate(self._seed_templates, start=1):
+            template_id = template.get("id", f"template-{idx}")
+            summary = self._normalize_text(template.get("summary"))
+
+            lines.append(f"#### Template {idx}: {template_id}")
+            if summary:
+                lines.append(f"**Summary**: {summary}")
+            lines.append("")
+
+            default_hypothesis = template.get("default_hypothesis", {})
+            if default_hypothesis:
+                lines.append("**Default Hypothesis:**")
+                for key in [
+                    "attack_type",
+                    "target",
+                    "description",
+                    "experiment_design",
+                    "confidence_score",
+                    "novelty_score",
+                ]:
+                    value = self._normalize_text(default_hypothesis.get(key))
+                    if value:
+                        lines.append(f"- {key}: {value}")
+                lines.append("")
 
         return "\n".join(lines) + "\n"
 

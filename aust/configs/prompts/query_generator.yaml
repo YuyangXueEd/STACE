@@ -30,14 +30,14 @@ system_prompt: |
 
   Respond with valid JSON matching this schema:
   ```json
-  {{
+  {
     "queries": [
-      {{
+      {
         "query": "string",
         "target_collection": "aust_papers_any_to_v"
-      }}
+      }
     ]
-  }}
+  }
 
 
 

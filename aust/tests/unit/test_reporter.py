@@ -292,7 +292,7 @@ class TestReporterAgent:
         reporter = ReporterAgent(output_dir=temp_output_dir)
 
         assert reporter.output_dir == temp_output_dir
-        assert reporter.template_path.name == "report_template.md"
+        assert isinstance(reporter._config, dict)
 
     def test_create_metadata_from_state(
         self, reporter_agent, sample_inner_loop_state, sample_attack_trace_data
@@ -502,3 +502,145 @@ class TestReportIntegration:
         assert "Stable Diffusion" in content
         assert "ESD" in content
         assert "nudity" in content
+
+
+# ============================================================================
+# Story 5.1: Novelty Calculation Tests
+# ============================================================================
+
+
+class TestNoveltyCalculation:
+    """Tests for hypothesis novelty calculation (Story 5.1)."""
+
+    def test_calculate_novelty_with_mock_rag(self, reporter_agent, mocker):
+        """Test novelty calculation with mocked RAG system."""
+        import numpy as np
+        from aust.src.data_models.report import NoveltyInfo
+
+        # Mock RAG system
+        mock_rag = mocker.MagicMock()
+        mock_embedding_model = mocker.MagicMock()
+        mock_rag.embedding_model = mock_embedding_model
+
+        # Hypothesis embedding
+        hyp_embedding = np.array([0.5, 0.5, 0.0])
+        mock_embedding_model.embed.return_value = hyp_embedding
+
+        # Mock paper vectors (high similarity = low novelty)
+        mock_papers = [
+            {
+                "arxiv_id": "2101.00001",
+                "paper_title": "Very Similar Paper",
+                "vector": [0.6, 0.6, 0.1],  # High similarity
+            },
+            {
+                "arxiv_id": "2102.00002",
+                "paper_title": "Moderately Similar Paper",
+                "vector": [0.3, 0.3, 0.2],  # Medium similarity
+            },
+            {
+                "arxiv_id": "2103.00003",
+                "paper_title": "Different Paper",
+                "vector": [0.0, 0.0, 1.0],  # Low similarity
+            },
+        ]
+        mock_rag.get_all_paper_vectors.return_value = mock_papers
+
+        # Patch PaperRAG constructor
+        mocker.patch(
+            "aust.src.agents.reporter.PaperRAG",
+            return_value=mock_rag,
+        )
+
+        # Test novelty calculation
+        result = reporter_agent.calculate_hypothesis_novelty(
+            "Test hypothesis about adversarial attacks"
+        )
+
+        assert result is not None
+        assert isinstance(result, NoveltyInfo)
+        assert 0.0 <= result.novelty_score <= 1.0
+        assert 0.0 <= result.max_similarity <= 1.0
+        assert result.novelty_score == 1.0 - result.max_similarity
+        assert len(result.top_similar_papers) == 3
+        assert result.top_similar_papers[0]["arxiv_id"] == "2101.00001"  # Most similar first
+
+    def test_calculate_novelty_high_similarity_low_novelty(self, reporter_agent, mocker):
+        """Test that high similarity results in low novelty score."""
+        import numpy as np
+
+        mock_rag = mocker.MagicMock()
+        mock_embedding_model = mocker.MagicMock()
+        mock_rag.embedding_model = mock_embedding_model
+
+        # Nearly identical hypothesis and paper
+        hyp_embedding = np.array([1.0, 0.0, 0.0])
+        mock_embedding_model.embed.return_value = hyp_embedding
+
+        mock_papers = [
+            {
+                "arxiv_id": "2101.00001",
+                "paper_title": "Nearly Identical Paper",
+                "vector": [0.99, 0.01, 0.0],  # Very high similarity
+            },
+        ]
+        mock_rag.get_all_paper_vectors.return_value = mock_papers
+
+        mocker.patch("aust.src.agents.reporter.PaperRAG", return_value=mock_rag)
+
+        result = reporter_agent.calculate_hypothesis_novelty("Test hypothesis")
+
+        assert result is not None
+        assert result.max_similarity > 0.9  # High similarity
+        assert result.novelty_score < 0.2  # Low novelty
+
+    def test_calculate_novelty_low_similarity_high_novelty(self, reporter_agent, mocker):
+        """Test that low similarity results in high novelty score."""
+        import numpy as np
+
+        mock_rag = mocker.MagicMock()
+        mock_embedding_model = mocker.MagicMock()
+        mock_rag.embedding_model = mock_embedding_model
+
+        # Orthogonal vectors = low similarity
+        hyp_embedding = np.array([1.0, 0.0, 0.0])
+        mock_embedding_model.embed.return_value = hyp_embedding
+
+        mock_papers = [
+            {
+                "arxiv_id": "2101.00001",
+                "paper_title": "Different Paper",
+                "vector": [0.0, 1.0, 0.0],  # Orthogonal = similarity ~0
+            },
+        ]
+        mock_rag.get_all_paper_vectors.return_value = mock_papers
+
+        mocker.patch("aust.src.agents.reporter.PaperRAG", return_value=mock_rag)
+
+        result = reporter_agent.calculate_hypothesis_novelty("Novel hypothesis")
+
+        assert result is not None
+        assert result.max_similarity < 0.2  # Low similarity
+        assert result.novelty_score > 0.8  # High novelty
+
+    def test_calculate_novelty_no_papers(self, reporter_agent, mocker):
+        """Test novelty calculation when no papers exist in database."""
+        mock_rag = mocker.MagicMock()
+        mock_rag.get_all_paper_vectors.return_value = []
+
+        mocker.patch("aust.src.agents.reporter.PaperRAG", return_value=mock_rag)
+
+        result = reporter_agent.calculate_hypothesis_novelty("Test hypothesis")
+
+        assert result is None  # Should return None when no papers available
+
+    def test_calculate_novelty_exception_handling(self, reporter_agent, mocker):
+        """Test that novelty calculation handles exceptions gracefully."""
+        mock_rag = mocker.MagicMock()
+        mock_rag.get_all_paper_vectors.side_effect = Exception("Database error")
+
+        mocker.patch("aust.src.agents.reporter.PaperRAG", return_value=mock_rag)
+
+        result = reporter_agent.calculate_hypothesis_novelty("Test hypothesis")
+
+        assert result is None  # Should return None on exception

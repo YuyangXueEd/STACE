@@ -609,7 +609,7 @@ so that **the system produces publication-ready reports automatically**.
 #### Acceptance Criteria
 
 1. Reporter agent implemented in `aust/src/agents/reporter.py`
-2. Report template defined in `aust/configs/report_template.md` with sections: Introduction, Methods, Experiments, Results, Discussion, Conclusion
+2. Report template guidelines documented in `docs/stories/4.1.reporter-agent-report-structure-template.md` (Section Blueprint) with sections: Introduction, Methods, Experiments, Results, Discussion, Conclusion
 3. Reporter accepts inputs: attack traces (all iterations), successful experiments, evaluation results, retrieved paper references
 4. Reporter generates section outlines based on inputs (e.g., Methods describes hypothesis generation + experiment execution workflow)
 5. Generated report saved to `aust/outputs/reports/report_{run_id}.md` in Markdown format

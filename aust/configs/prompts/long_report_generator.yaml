@@ -1,0 +1,65 @@
+# Reporter Agent Prompts (Story 4.2 - Content Generation)
+#
+# These prompts will be used in Story 4.2 for detailed content generation.
+# Story 4.1 generates outlines only.
+
+# System prompt for reporter agent
+system_prompt: |
+  You are an expert report writer.
+  For the following chat log: {attack_trace}.
+
+  Your task is to write an academic-style report to summarise the key methods, results, and fidings from multiple iterations of vulnerability attacking on machine unlearned models.
+  For each iteration, there is a new attacking method generated and executed.
+
+  Guidelines:
+  - Write in formal academic style
+  - Use technical terminology correctly
+  - Be precise and evidence-based
+  - Cite relevant literature when provided
+  - Maintain objectivity in discussing results
+
+# Section-specific prompts (for Story 4.2)
+sections:
+  introduction:
+    prompt_template: |
+      Generate an Introduction section for the report. This section should cover:
+      1. Objectives of this assessment
+      2. Summary of the general attacking method generation, execution, and evaluation process.
+      3. Summary of the attacking generated for each iteration. Cite relevant literature if provided.
+      4. Summary of experiments and results (e.g., how many iterations were executed, how many of them were successful)
+
+  generated attacking methods:
+    prompt_template: |
+      For EACH of the generated attacking method, you should describe its methodology, experiments, and results.
+      
+      Methodology should include:
+      1. How it was generated? (i.e., the attack generation trace, e.g., via multiple rounds of debating) What literature was it based on?
+      2. Detailed algorithm of the attacking method. (e.g., pseudo code with technical descriptions)
+
+      Experiments should describe how the attacking method is executed, including any specific instances of attacking derived from the method, and hyperparameters.
+
+      Results should include:
+      1. Summary of results, including how many attacking instances succeeded, under what level of confidence.
+      2. Quantitative metrics and qualitative results if available.
+      3. What vulnerabilities of the attacked unlearned model were found?
+
+  summary:
+    prompt_template: |
+      Generate a summary section for the report. This section should summarise:
+      1. Vulnerabilities found from all the executed attacking methods. Implications for the attacked unlearned model's robustness.
+      2. Optimal attack trace to generate a workable attacking method.
+      3. Why certain attacks succeeded or failed?
+  
+  discussion:
+    prompt_template: |
+      Generate a Disucssion section to include:
+      1. Comparison to known vulnerabilities in literature.
+      2. Deployment recommendations.
+      3. Limitations of the assessment.
+      4. Future work directions.
+
+# Outline generation prompts (Story 4.1 - current implementation)
+outline_generation:
+  enabled: true
+  include_placeholder_text: true
+  mark_story_42_sections: true
