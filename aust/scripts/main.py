@@ -8,11 +8,11 @@ loop experiment from the CLI.  Typical usage::
 
     python aust/scripts/main.py \
         --task-type concept_erasure \
-        --prompt "Attack Stable Diffusion 1.4 unlearned with Mickey Mouse" \
-        --unlearned-model-path /data/users/yyx/onProject/CAUST/data/unlearned_models/mace/stable-diffusion/mickymouse/mace-mickymouse-pipeline/ \
+        --prompt "Attack Stable Diffusion 1.4 unlearned with superman" \
+        --unlearned-model-path data/unlearned_models/esd/200/stable-diffusion/superman/esd-superman-from-superman-esdx-pipeline \
         --model-name "Stable Diffusion" \
         --model-version "1.4" \
-        --unlearned-target "Mickey Mouse" \
+        --unlearned-target "superman" \
         --max-iterations 10 \
         --max-debate-rounds 2 \
         --skip-judge \
@@ -32,11 +32,8 @@ import sys
 from pathlib import Path
 from typing import Any, Optional, Sequence, TYPE_CHECKING
 from uuid import uuid4
-import agentops
 
 from dotenv import load_dotenv
-
-agentops.init(os.environ.get("AGENTOPS_API_KEY", ""))
 
 # Ensure the project root is on the import path when running as a script
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -259,11 +256,6 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Disable file logging output.",
     )
-    log_group.add_argument(
-        "--enable-agentops",
-        action="store_true",
-        help="Keep AgentOps instrumentation enabled (default: disable by unsetting AGENTOPS_API_KEY for this run).",
-    )
 
     judge_group = parser.add_argument_group("Judge evaluation")
     judge_group.add_argument(
@@ -299,8 +291,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         enable_file=not args.no_file_log,
         console_style=args.console_style,
     )
-
-    _configure_agentops(args.enable_agentops)
 
     try:
         states = run_outer_loop(args)
@@ -746,16 +736,6 @@ def _assert_path(path: Optional[Path], flag_name: str) -> Path:
     if not resolved.exists():
         raise FileNotFoundError(f"{flag_name} not found: {resolved}")
     return resolved
-
-
-def _configure_agentops(enable_agentops: bool) -> None:
-    """Disable AgentOps instrumentation unless explicitly enabled."""
-    if enable_agentops:
-        return
-
-    removed_key = os.environ.pop("AGENTOPS_API_KEY", None)
-    if removed_key is not None:
-        logger.info("AgentOps disabled for this run (use --enable-agentops to keep it enabled).")
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry

@@ -99,4 +99,3 @@ testcontainers
 # Logging
 python-json-logger
 rich
-agentops

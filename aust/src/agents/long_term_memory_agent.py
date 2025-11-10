@@ -94,7 +94,7 @@ class LongTermMemoryAgent:
             task_type=task_spec.get("task_type", "unknown"),
             unlearned_target=task_spec.get("unlearned_target", "unknown"),
             unlearning_method=task_spec.get("unlearning_method"),
-            model_name=task_spec.get("model_name"),
+            model_name="openai/gpt-5",
             hypothesis_attack_type=hypothesis.attack_type,
             hypothesis_summary=hypothesis.description,  # Use description field
             hypothesis_reasoning=hypothesis.experiment_design,  # Use experiment_design as reasoning
@@ -252,7 +252,7 @@ class LongTermMemoryAgent:
         system_prompt = system_prompt_template.format(attack_trace=attack_trace)
 
         fallback = {
-            "model_name": "openai/gpt-5-nano",
+            "model_name": "openai/gpt-5",
             "config": {
                 "temperature": 0.7,
                 "max_tokens": 128_000,

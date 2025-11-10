@@ -6,7 +6,7 @@ import json
 import re
 import uuid
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
 from typing import Any, Optional

@@ -17,6 +17,7 @@ aust/rag_paper_db/
 # Paper cards - gitignore progress/logs but track markdown cards
 .paper_cards/
 .paper_cards_old/
+hypothesis_bak/
 
 
 .env
