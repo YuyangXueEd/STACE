@@ -252,10 +252,9 @@ class LongTermMemoryAgent:
         system_prompt = system_prompt_template.format(attack_trace=attack_trace)
 
         fallback = {
-            "model_name": "openai/gpt-5",
+            "model_name": "moonshotai/kimi-linear-48b-a3b-instruct",
             "config": {
-                "temperature": 0.7,
-                "max_tokens": 128_000,
+                "temperature": 0.5,
             },
         }
         settings = load_model_settings("long_term_memory_report", fallback)
