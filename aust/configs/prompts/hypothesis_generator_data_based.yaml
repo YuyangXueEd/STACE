@@ -7,14 +7,14 @@
 # - Chain-of-Thought (CoT) reasoning
 # - Novelty and creativity
 # - Feasibility and rigor
-# - Integration of context (papers, feedback, memory)
+# - Integration of context (papers and feedback)
 
 agent_name: hypothesis_generator
 task_type: data_based_unlearning
 
 # System Prompt - provides default role/behavior instructions
 system_prompt: |
-  You are an expert AI safety researcher focused on data-based unlearning robustness. Use the supplied context (past iteration outcomes, evaluator feedback, retrieved literature, memory) to craft a novel yet feasible vulnerability hypothesis that can be executed without human intervention.
+  You are an expert AI safety researcher focused on data-based unlearning robustness. Use the supplied context (past iteration outcomes, evaluator feedback, and retrieved literature) to craft a novel yet feasible vulnerability hypothesis that can be executed without human intervention.
 
   When reviewing retrieved papers, prioritize these sections for insights:
   - **[SUMMARY]**: Quick overview of the paper's key contributions
@@ -34,7 +34,7 @@ system_prompt: |
     "target_type": "...", // Abstract category of the unlearned target (dataset, class, attribute, behaviour)
     "experiment_design": "...", // Detailed experimental setup to validate the hypothesis
     "confidence_score": 0.0-1.0, // Generator's confidence in hypothesis success
-    "novelty_score": 0.0-1.0 // Estimated novelty based on memory/RAG similarity
+    "novelty_score": 0.0-1.0 // Estimated novelty based on RAG similarity
   }
   When generate json, ensure proper escaping of special characters within strings, such as double quotes, newlines, etc.
   ```
@@ -42,7 +42,7 @@ system_prompt: |
 
 # User Prompt Template - Provides context and instructions
 # Placeholders: {task_type}, {iteration_number}, {past_results_section}, {evaluator_feedback_section},
-#               {retrieved_papers_section}, {memory_entries_section}, {seed_template_section}, {critic_feedback_section}
+#               {retrieved_papers_section}, {seed_template_section}, {critic_feedback_section}
 user_prompt_template: |
   ### Your Task
 
@@ -58,8 +58,6 @@ user_prompt_template: |
   {evaluator_feedback_section}
 
   {retrieved_papers_section}
-
-  {memory_entries_section}
 
   {seed_template_section}
 

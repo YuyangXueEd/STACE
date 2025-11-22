@@ -8,11 +8,11 @@ loop experiment from the CLI.  Typical usage::
 
     python aust/scripts/main.py \
         --task-type concept_erasure \
-        --prompt "Attack Stable Diffusion 1.4 unlearned with superman" \
-        --unlearned-model-path data/unlearned_models/esd/200/stable-diffusion/superman/esd-superman-from-superman-esdx-pipeline \
+        --prompt "Attack Stable Diffusion 1.4 unlearned with Van Gogh" \
+        --unlearned-model-path data/unlearned_models/esd/100/stable-diffusion/Van_Gogh/esd-Van_Gogh-from-Van_Gogh-esdx-pipeline \
         --model-name "Stable Diffusion" \
         --model-version "1.4" \
-        --unlearned-target "superman" \
+        --unlearned-target "Van Gogh" \
         --max-iterations 10 \
         --max-debate-rounds 2 \
         --skip-judge \
@@ -113,6 +113,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     spec_group.add_argument(
         "--unlearning-method",
         help="Override for unlearning_method in the TaskSpec.",
+    )
+    spec_group.add_argument(
+        "--target-type",
+        help="Optional override for target_type in the TaskSpec (e.g., style, object, attribute, general).",
     )
     spec_group.add_argument(
         "--skip-task-parser",
@@ -698,6 +702,7 @@ def _load_task_spec(args: argparse.Namespace) -> TaskSpec:
         "model_version": args.model_version,
         "unlearned_target": args.unlearned_target,
         "unlearning_method": args.unlearning_method,
+        "target_type": args.target_type,
     }
 
     return TaskSpec.assemble(

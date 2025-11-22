@@ -540,17 +540,31 @@ class CodeSynthesizerAgent:
             if exit_code_match:
                 exit_code = int(exit_code_match.group(1))
 
+            combined_output = "\n".join(
+                part for part in (stdout_text, stderr_text) if part
+            )
+            exception_detected = self._contains_exception_signature(combined_output)
+
             run_result.stdout = stdout_text
             if stderr_text:
                 run_result.stderr = stderr_text
 
-            if exit_code != 0:
+            execution_failed = exit_code != 0 or exception_detected
+            if execution_failed and exit_code == 0 and exception_detected:
+                logger.warning(
+                    "Detected exception signature in output despite zero exit code; "
+                    "marking execution as failure."
+                )
+                exit_code = 1
+
+            if execution_failed:
                 run_result.exit_code = exit_code
                 run_result.status = ExecutionStatus.FAILURE
                 artifact.mark_status(CodeArtifactStatus.FAILED)
 
                 if not run_result.stderr:
-                    run_result.stderr = "Execution failed with no stderr output."
+                    # Fall back to any output we captured so the repair agent has context.
+                    run_result.stderr = combined_output or "Execution failed with no stderr output."
 
                 run_result.error_summary = self._extract_error_summary(run_result.stderr)
                 run_result.error_snippet = self._extract_error_snippet(run_result.stderr)
@@ -817,6 +831,21 @@ class CodeSynthesizerAgent:
 
         # For relative paths, ensure POSIX formatting
         return path.as_posix()
+
+    @staticmethod
+    def _contains_exception_signature(output: str) -> bool:
+        """Detect if execution output contains signs of an unhandled exception."""
+        if not output:
+            return False
+
+        lowered = output.lower()
+        markers = (
+            "traceback (most recent call last)",
+            "error during execution",
+            "fatal python error",
+            "uncaught exception",
+        )
+        return any(marker in lowered for marker in markers)
 
     @staticmethod
     def _extract_error_summary(stderr: str) -> str:

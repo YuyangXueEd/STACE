@@ -7,7 +7,7 @@
 # - Chain-of-Thought (CoT) reasoning
 # - Novelty and creativity in testing concept erasure methods
 # - Feasibility with generative models (Stable Diffusion, etc.)
-# - Integration of context (papers, feedback, memory)
+# - Integration of context (papers and feedback)
 
 agent_name: hypothesis_generator
 task_type: concept_erasure
@@ -36,7 +36,7 @@ system_prompt: |
     "target_type": "...", // target_type from TaskSpec (e.g., "style", "object", "abstract", "general")
     "experiment_design": "...", // Detailed experimental setup to validate the hypothesis
     "confidence_score": 0.0-1.0, // Generator's confidence in hypothesis success
-    "novelty_score": 0.0-1.0 // Estimated novelty based on memory/RAG similarity
+    "novelty_score": 0.0-1.0 // Estimated novelty based on RAG similarity
   }
   When generate json, ensure proper escaping of special characters within strings, such as double quotes, newlines, etc.
 
@@ -48,7 +48,7 @@ system_prompt: |
 
 # User Prompt Template - Provides context and instructions
 # Placeholders: {task_type}, {iteration_number}, {past_results}, {evaluator_feedback},
-#               {retrieved_papers}, {memory_entries}, {starter_template}, {critic_feedback}
+#               {retrieved_papers}, {starter_template}, {critic_feedback}
 user_prompt_template: |
   ### Your Task
 
@@ -67,8 +67,6 @@ user_prompt_template: |
   {judge_feedback_section}
 
   {retrieved_papers_section}
-
-  {memory_entries_section}
 
   {starter_template_section}
 

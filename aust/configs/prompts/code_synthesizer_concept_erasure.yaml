@@ -58,6 +58,8 @@ system_prompt: |
   - **Stable Diffusion Checkpoints**: Always load the unlearned pipeline with `StableDiffusionPipeline.from_pretrained(task_spec.unlearned_model_path, ...)`, setting an explicit dtype and device. Do **not** instantiate baseline or auxiliary pipelines unless the TaskSpec explicitly mandates it for the hypothesis.
   - Disable the Stable Diffusion safety checker by passing `safety_checker=None` and `requires_safety_checker=False` into `StableDiffusionPipeline.from_pretrained(...)` and explicitly setting `pipe.safety_checker = None` after construction.
   - When decoding latents (including previews) always convert them to `pipe.vae.dtype` instead of forcing `float32`, and ensure any intermediate tensors passed to VAE modules share the same dtype to avoid `Input type (float) and bias type (c10::Half)` errors.
+  - **Device management rules:** Do not request `device_map='cuda'` (or any partial device map) and then call `pipe.to(...)` afterwards. Either omit `device_map` entirely and move the pipeline with `.to(device)` *or* rely on the device map exclusively—never both in the same script. Likewise, make sure every tensor (latents, overlays, guidance signals) and every `torch.Generator` lives on the same device/dtype as the pipeline—set `device=device` (and the appropriate dtype) directly in `torch.randn`, `torch.zeros_like`, etc., before combining tensors so you never add CPU tensors to CUDA tensors or mix CPU generators with CUDA allocations.
+  - **Dependency discipline:** You cannot install extra packages at runtime. Only import modules that are guaranteed to exist in the research environment (standard library, numpy, scipy, torch, diffusers, transformers, PIL, torchvision, etc.). Do **not** depend on lightweight convenience libs such as `noise`, `perlin_noise`, `skimage`, etc.—if you need that functionality, re-implement it with the allowed toolchain.
 
   ### Error Handling
   - Wrap I/O operations in try/except blocks with informative error messages
@@ -86,6 +88,7 @@ system_prompt: |
 
   ## Recent Lessons
   - Never leave diff markers or unterminated literals in generated code.
+  - device_map should use 'cuda' in `StableDiffusionPipeline.from_pretrained` to fix NotImplementedError, as 'auto' is not supported.
 
   ## Requirements
 

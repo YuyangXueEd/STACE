@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from camel.embeddings import SentenceTransformerEncoder
 from camel.retrievers import VectorRetriever
-from camel.storages import QdrantStorage
+from camel.storages import QdrantStorage, VectorRecord
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +261,9 @@ class PaperRAG:
         """
         logger.info(f"Adding {len(chunks)} chunks to vector database")
 
+        texts = []
+        metadatas = []
+
         for chunk in chunks:
             text = chunk.get("text", "")
             metadata = chunk.get("metadata", {})
@@ -269,11 +272,32 @@ class PaperRAG:
                 logger.warning("Skipping chunk with empty text")
                 continue
 
-            # Use CAMEL's VectorRetriever to store content
-            # This handles embedding and storage automatically
-            self.storage.save([text], [metadata])
+            texts.append(text)
+            # Ensure text is in metadata as well, as Qdrant stores payload
+            if "text" not in metadata:
+                metadata["text"] = text
+            metadatas.append(metadata)
 
-        logger.info(f"Successfully added {len(chunks)} chunks")
+        if not texts:
+            logger.warning("No valid chunks to add")
+            return
+
+        try:
+            # Generate embeddings
+            embeddings = self.embedding_model.embed_list(texts)
+
+            # Create VectorRecords
+            records = []
+            for vector, metadata in zip(embeddings, metadatas):
+                records.append(VectorRecord(vector=vector, payload=metadata))
+
+            # Add to storage
+            self.storage.add(records=records)
+            logger.info(f"Successfully added {len(records)} chunks")
+
+        except Exception as e:
+            logger.error(f"Failed to add chunks: {e}", exc_info=True)
+            raise
 
     def get_paper_metadata(self, arxiv_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve metadata for a specific paper by ArXiv ID.

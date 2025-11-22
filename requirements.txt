@@ -20,7 +20,7 @@ torchaudio
 openai  # For OpenRouter API compatibility
 
 # RAG Dependencies
-qdrant-client
+qdrant-client==1.15.1
 sentence-transformers
 
 # Data Validation
@@ -99,3 +99,7 @@ testcontainers
 # Logging
 python-json-logger
 rich
+
+# Dependecies for code gen
+noise
+perlin-noise

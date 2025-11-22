@@ -982,8 +982,12 @@ Automated vulnerability discovery in machine unlearning represents an important 
         logger.info("Saving successful attack as seed template")
 
         try:
-            # Determine target type and attack ID
+            # Determine target type/name and attack ID
             target_type = seed_template.get("target_type", "general")
+            target_name = self._extract_target_name(
+                task_context,
+                fallback=seed_template.get("unlearned_target"),
+            )
             attack_id = seed_template.get("task_id", "")
             attack_type = seed_template.get("attack_type", "")
 
@@ -1007,8 +1011,10 @@ Automated vulnerability discovery in machine unlearning represents an important 
             raw_payload = seed_template.get("raw_template")
             if isinstance(raw_payload, dict):
                 target_type = raw_payload.get("target_type", target_type)
+                target_name = raw_payload.get("unlearned_target", target_name)
 
-            target_dir = templates_dir / target_type
+            target_dir_name = self._build_target_dir_name(target_type, target_name)
+            target_dir = templates_dir / target_dir_name
             target_dir.mkdir(parents=True, exist_ok=True)
 
             # Check for duplicates using similarity
@@ -1120,7 +1126,7 @@ Automated vulnerability discovery in machine unlearning represents an important 
 
             saved_path = self.save_successful_attack_template(
                 template,
-                task_context=None,
+                task_context=task_context,
             )
             if saved_path:
                 saved_paths.append(saved_path)
@@ -1171,6 +1177,74 @@ Automated vulnerability discovery in machine unlearning represents an important 
         }
 
         return normalized
+
+    def _extract_target_name(
+        self,
+        task_context: Optional[Any],
+        fallback: Optional[str] = None,
+    ) -> Optional[str]:
+        """Best-effort extraction of the unlearned target/subject name."""
+
+        def _from_mapping(mapping: dict[str, Any]) -> Optional[str]:
+            for key in ("unlearned_target", "target_name", "target"):
+                value = mapping.get(key)
+                if value:
+                    return str(value)
+            return None
+
+        candidate_mappings: list[dict[str, Any]] = []
+
+        if isinstance(task_context, dict):
+            candidate_mappings.append(task_context)
+        elif task_context is not None:
+            for attr in ("model_dump", "dict"):
+                extractor = getattr(task_context, attr, None)
+                if callable(extractor):
+                    try:
+                        data = extractor()
+                    except TypeError:
+                        try:
+                            data = extractor(mode="json")
+                        except Exception:
+                            continue
+                    except Exception:
+                        continue
+                    if isinstance(data, dict):
+                        candidate_mappings.append(data)
+
+            for attr in ("unlearned_target", "target_name", "target"):
+                value = getattr(task_context, attr, None)
+                if value:
+                    return str(value)
+
+        for mapping in candidate_mappings:
+            result = _from_mapping(mapping)
+            if result:
+                return result
+
+        return fallback
+
+    def _build_target_dir_name(
+        self,
+        target_type: Optional[str],
+        target_name: Optional[str],
+    ) -> str:
+        """Construct directory name in the form <type> or <type>_<target>."""
+        base = self._sanitize_slug(target_type, default="general")
+        if target_name:
+            target_slug = self._sanitize_slug(target_name, default="")
+            if target_slug:
+                return f"{base}_{target_slug}"
+        return base
+
+    @staticmethod
+    def _sanitize_slug(value: Optional[str], default: str = "general") -> str:
+        """Sanitize user-provided strings for filesystem usage."""
+        if not value:
+            return default
+        slug = re.sub(r"[^A-Za-z0-9_-]+", "_", str(value).strip())
+        slug = re.sub(r"_+", "_", slug).strip("_")
+        return slug or default
 
     def _is_duplicate_template(
         self,

@@ -90,6 +90,10 @@ _GENERATOR_SETTINGS = _load_model_settings_strict("hypothesis_generator")
 _CRITIC_SETTINGS = _load_model_settings_strict("critic")
 
 
+class HypothesisGeneratorResponseError(RuntimeError):
+    """Raised when the hypothesis generator produces an unusable response."""
+
+
 class HypothesisRefinementWorkforce:
     """Coordinates hypothesis generation, critique, and refinement."""
 
@@ -166,6 +170,7 @@ class HypothesisRefinementWorkforce:
             logger.info("Using default starter_template.yaml")
 
         self._max_retrieved_papers = 3
+        self._generator_retry_limit = 3
 
         logger.info(
             "HypothesisRefinementWorkforce initialized "
@@ -209,15 +214,26 @@ class HypothesisRefinementWorkforce:
             logger.info(
                 "Iteration %s: generating starter hypothesis without debate", iteration
             )
-            payload = self._invoke_generator(
+            starter_prompt = self._build_generator_prompt(
+                context=context,
                 task_type=task_type,
-                user_prompt=self._build_generator_prompt(
-                    context=context,
-                    task_type=task_type,
-                    stage="starter",
-                    critic_feedback=None,
-                ),
+                stage="starter",
+                critic_feedback=None,
             )
+            try:
+                payload = self._invoke_generator(
+                    task_type=task_type,
+                    user_prompt=starter_prompt,
+                )
+            except HypothesisGeneratorResponseError as exc:
+                logger.warning(
+                    "Iteration %s: generator response unparsable (%s); using seed template fallback",
+                    iteration,
+                    exc,
+                )
+                payload = self._build_fallback_payload(
+                    fallback_hypothesis=starting_hypothesis,
+                )
             hypothesis = self._hydrate_hypothesis(
                 payload=payload,
                 context=context,
@@ -256,10 +272,20 @@ class HypothesisRefinementWorkforce:
                 stage="initial",
                 critic_feedback=None,
             )
-            payload = self._invoke_generator(
-                task_type=task_type,
-                user_prompt=initial_prompt,
-            )
+            try:
+                payload = self._invoke_generator(
+                    task_type=task_type,
+                    user_prompt=initial_prompt,
+                )
+            except HypothesisGeneratorResponseError as exc:
+                logger.warning(
+                    "Iteration %s: initial hypothesis generation failed (%s); falling back to starter template",
+                    iteration,
+                    exc,
+                )
+                payload = self._build_fallback_payload(
+                    fallback_hypothesis=starting_hypothesis,
+                )
             initial_hypothesis = self._hydrate_hypothesis(
                 payload=payload,
                 context=working_context,
@@ -324,10 +350,21 @@ class HypothesisRefinementWorkforce:
                 stage="refinement",
                 critic_feedback=critic_feedback,
             )
-            payload = self._invoke_generator(
-                task_type=task_type,
-                user_prompt=refinement_prompt,
-            )
+            try:
+                payload = self._invoke_generator(
+                    task_type=task_type,
+                    user_prompt=refinement_prompt,
+                )
+            except HypothesisGeneratorResponseError as exc:
+                logger.warning(
+                    "Iteration %s round %s: generator output invalid (%s); reusing prior hypothesis",
+                    iteration,
+                    round_number,
+                    exc,
+                )
+                payload = self._build_fallback_payload(
+                    fallback_hypothesis=critique_target,
+                )
             refined_hypothesis = self._hydrate_hypothesis(
                 payload=payload,
                 context=working_context,
@@ -463,6 +500,32 @@ class HypothesisRefinementWorkforce:
             "novelty_score": hypothesis.novelty_score,
         }
 
+    def _build_fallback_payload(
+        self,
+        *,
+        fallback_hypothesis: Optional[Hypothesis],
+    ) -> dict[str, Any]:
+        """
+        Build a fallback payload when the generator output cannot be parsed.
+
+        Preference order:
+            1. Reuse the provided fallback hypothesis (if available)
+            2. Use the first available seed template's default hypothesis
+        """
+        if fallback_hypothesis is not None:
+            return self._hypothesis_to_payload(fallback_hypothesis)
+
+        return self._fallback_template_payload()
+
+    def _fallback_template_payload(self) -> dict[str, Any]:
+        for template in self._seed_templates:
+            default_hypothesis = template.get("default_hypothesis")
+            if isinstance(default_hypothesis, dict) and default_hypothesis:
+                return deepcopy(default_hypothesis)
+        raise HypothesisGeneratorResponseError(
+            "No seed template available for hypothesis fallback"
+        )
+
     @staticmethod
     def _dump_model_json_safe(model: Optional[Any]) -> Optional[Any]:
         """Dump Pydantic models (or compatible objects) into JSON-safe dicts."""
@@ -504,21 +567,46 @@ class HypothesisRefinementWorkforce:
 
     def _invoke_generator(self, *, task_type: str, user_prompt: str) -> dict[str, Any]:
         system_prompt = self._get_generator_prompt_config(task_type)["system_prompt"]
-        agent = ChatAgent(
-            system_message=BaseMessage.make_assistant_message(
-                role_name="HypothesisGenerator",
-                content=system_prompt,
-            ),
-            model=self._generator_backend,
-        )
-        try:
-            response = agent.step(
-                BaseMessage.make_user_message("TaskOrchestrator", user_prompt)
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, self._generator_retry_limit + 1):
+            agent = ChatAgent(
+                system_message=BaseMessage.make_assistant_message(
+                    role_name="HypothesisGenerator",
+                    content=system_prompt,
+                ),
+                model=self._generator_backend,
             )
-            content = self._extract_last_content(response)
-            return self._parse_json_payload(content)
-        finally:
-            agent.reset()
+            try:
+                response = agent.step(
+                    BaseMessage.make_user_message("TaskOrchestrator", user_prompt)
+                )
+                content = self._extract_last_content(response)
+                return self._parse_json_payload(content)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                logger.warning(
+                    "Hypothesis generator JSON parse failure (attempt %d/%d): %s",
+                    attempt,
+                    self._generator_retry_limit,
+                    exc,
+                )
+                logger.debug("Generator raw content (attempt %d): %s", attempt, content)
+            except Exception as exc:  # pylint: disable=broad-except
+                last_error = exc
+                logger.error(
+                    "Hypothesis generator invocation failed (attempt %d/%d): %s",
+                    attempt,
+                    self._generator_retry_limit,
+                    exc,
+                    exc_info=True,
+                )
+            finally:
+                agent.reset()
+
+        raise HypothesisGeneratorResponseError(
+            "Hypothesis generator failed after multiple attempts"
+        ) from last_error
 
     def _invoke_critic(
         self,
@@ -638,7 +726,6 @@ class HypothesisRefinementWorkforce:
             "evaluator_feedback_section": self._render_evaluator_feedback(context),
             "judge_feedback_section": self._render_judge_feedback(context),
             "retrieved_papers_section": self._render_retrieved_papers(context),
-            "memory_entries_section": self._render_memory_entries(context),
             "starter_template_section": (
                 self._render_starter_template(stage) if stage == "starter" else ""
             ),
@@ -683,9 +770,9 @@ class HypothesisRefinementWorkforce:
             return textwrap.dedent(
                 f"""
                 Propose a fresh vulnerability hypothesis for this iteration by synthesizing
-                judge summary notes, evaluator feedback, past results, memory entries, and
-                retrieved papers. Focus on unexplored attack angles that align with the TaskSpec
-                while incorporating the judges' critiques to raise report quality.
+                judge summary notes, evaluator feedback, past results, and retrieved papers.
+                Focus on unexplored attack angles that align with the TaskSpec while
+                incorporating the judges' critiques to raise report quality.
 
                 {task_spec_summary}
 
@@ -790,49 +877,6 @@ class HypothesisRefinementWorkforce:
                     normalized = self._normalize_text(value)
                     if normalized:
                         lines.append(f"   - {heading}: {normalized}")
-        return "\n".join(lines) + "\n"
-
-    def _render_memory_entries(self, context: HypothesisContext) -> str:
-        """
-        Render past successful attacks from long-term memory.
-
-        Memory entries are structured attack memory cards with sections:
-        [METADATA], [HYPOTHESIS], [RESULTS], [LESSONS_LEARNED]
-        """
-        memory = context.memory_entries or []
-        if not memory:
-            return ""
-
-        lines = ["### Past Successful Attacks (Learn from these!)"]
-        lines.append("")
-        lines.append("The following attacks successfully discovered vulnerabilities in previous runs.")
-        lines.append("Use these as inspiration but aim for novelty and diversity in your hypothesis.")
-        lines.append("")
-
-        for idx, item in enumerate(memory, start=1):
-            attack_id = item.get("attack_id", "unknown")
-            summary = item.get("summary", "")
-
-            lines.append(f"#### Attack {idx}: {attack_id}")
-            lines.append("")
-
-            # Include the summarized attack memory card content
-            # (Already filtered to relevant sections by LongTermMemoryAgent)
-            if summary:
-                lines.append(summary)
-            else:
-                # Fallback to old format if present
-                pattern = self._normalize_text(item.get("attack_pattern"))
-                insight = self._normalize_text(
-                    item.get("key_insight") or item.get("learning")
-                )
-                if pattern:
-                    lines.append(f"**Pattern**: {pattern}")
-                if insight:
-                    lines.append(f"**Insight**: {insight}")
-
-            lines.append("")
-
         return "\n".join(lines) + "\n"
 
     def _render_starter_template(self, stage: str) -> str:
