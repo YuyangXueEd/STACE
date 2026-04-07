@@ -1,10 +1,10 @@
-# CAUST - Continual Automated Unlearning Safety Testing
+# STACE - Continual Automated Unlearning Safety Testing
 
-**CAUST** is an autonomous multi-agent system for red-teaming machine unlearning methods. It automatically generates hypotheses, designs experiments, and evaluates unlearning techniques to discover vulnerabilities in data-based and concept-erasure approaches.
+**STACE** is an autonomous multi-agent system for red-teaming machine unlearning methods. It automatically generates hypotheses, designs experiments, and evaluates unlearning techniques to discover vulnerabilities in data-based and concept-erasure approaches.
 
 ## Overview
 
-CAUST uses a dual-loop architecture:
+STACE uses a dual-loop architecture:
 - **Inner Loop**: Generates hypotheses, designs experiments, executes them on H200 GPUs, and evaluates results
 - **Outer Loop**: Synthesizes findings across iterations, judges novelty and impact, and produces comprehensive reports
 
@@ -17,7 +17,7 @@ The system leverages:
 ## Project Structure
 
 ```
-CAUST/
+STACE/
 ├── aust/                       # Application package
 │   ├── configs/                # Prompts, personas, thresholds, task templates
 │   ├── experiments/            # Placeholder for experiment artifacts
@@ -57,8 +57,8 @@ CAUST/
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/vios-s/CAUST.git
-   cd CAUST
+   git clone https://github.com/vios-s/STACE.git
+   cd STACE
    ```
 
 2. **Create Python virtual environment:**
@@ -93,12 +93,12 @@ CAUST/
 
 Build the Docker image:
 ```bash
-docker build -t caust:latest -f docker/Dockerfile .
+docker build -t STACE:latest -f docker/Dockerfile .
 ```
 
 Test the container:
 ```bash
-docker run --rm caust:latest
+docker run --rm STACE:latest
 ```
 
 ### Kubernetes Deployment
@@ -117,7 +117,7 @@ docker run --rm caust:latest
 3. **Monitor job:**
    ```bash
    kubectl get jobs
-   kubectl logs job/caust-experiment-job
+   kubectl logs job/STACE-experiment-job
    ```
 
 ## Documentation
@@ -225,7 +225,7 @@ Configuration files are located in `aust/configs/`:
 - Verify PVC is bound: `kubectl get pvc`
 
 ### Import errors in Python
-- Ensure `PYTHONPATH` includes project root: `export PYTHONPATH=/path/to/CAUST:$PYTHONPATH`
+- Ensure `PYTHONPATH` includes project root: `export PYTHONPATH=/path/to/STACE:$PYTHONPATH`
 - Check virtual environment is activated
 
 ### Logging not working
@@ -242,4 +242,4 @@ TBD
 
 ## Contact
 
-Project repository: https://github.com/vios-s/CAUST
+Project repository: https://github.com/vios-s/STACE
